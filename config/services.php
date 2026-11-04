@@ -36,7 +36,7 @@ return [
     ],
 
     'python_omr' => [
-        'url' => env('PYTHON_OMR_URL', 'http://127.0.0.1:5000'),
+        'url' => env('PYTHON_OMR_URL', 'http://127.0.0.1:5001'),
     ],
 
 ];
