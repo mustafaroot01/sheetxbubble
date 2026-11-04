@@ -129,7 +129,7 @@
                 </div>
 
                 {{-- Camera View --}}
-                <div class="relative bg-gray-950" style="aspect-ratio:3/4; max-height:72vh">
+                <div class="relative bg-gray-950" style="aspect-ratio:3/4; max-height:82vh; min-height:60vh">
                     <video x-ref="video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-contain"></video>
                     <canvas x-ref="scanCanvas" class="hidden"></canvas>
 
@@ -486,17 +486,17 @@
 
             _startScanning() {
                 this._stopScanning();
-                const scan = () => {
+                const scan = async () => {
                     if (!this.cameraOn || this.processing) {
                         this.scanRAF = requestAnimationFrame(scan);
                         return;
                     }
-                    this._scanFrame();
+                    await this._scanFrame();
                     setTimeout(() => {
                         if (this.cameraOn && !this.processing) {
                             this.scanRAF = requestAnimationFrame(scan);
                         }
-                    }, 150);
+                    }, 120);
                 };
                 this.scanRAF = requestAnimationFrame(scan);
             },
@@ -505,7 +505,27 @@
                 if (this.scanRAF) { cancelAnimationFrame(this.scanRAF); this.scanRAF = null; }
             },
 
-            _scanFrame() {
+            async _detectQr(canvas, w, h, ctx) {
+                // Native BarcodeDetector is far more reliable than jsQR when available
+                if (this._bd === undefined) {
+                    try {
+                        this._bd = ('BarcodeDetector' in window)
+                            ? new BarcodeDetector({ formats: ['qr_code'] })
+                            : null;
+                    } catch (e) { this._bd = null; }
+                }
+                if (this._bd) {
+                    try {
+                        const codes = await this._bd.detect(canvas);
+                        if (codes && codes.length && codes[0].rawValue) return codes[0].rawValue;
+                    } catch (e) { /* fall through to jsQR */ }
+                }
+                const imageData = ctx.getImageData(0, 0, w, h);
+                const qr = jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+                return (qr && qr.data) ? qr.data : null;
+            },
+
+            async _scanFrame() {
                 const v = this.$refs.video;
                 if (!v || v.videoWidth === 0 || v.readyState < 2) return;
 
@@ -518,14 +538,13 @@
 
                 const ctx = c.getContext('2d', { willReadFrequently: true });
                 ctx.drawImage(v, 0, 0, w, h);
-                const imageData = ctx.getImageData(0, 0, w, h);
 
                 this.scanCount++;
 
-                let qr = jsQR(imageData.data, w, h, { inversionAttempts: 'attemptBoth' });
+                const raw = await this._detectQr(c, w, h, ctx);
 
-                if (qr && qr.data) {
-                    let parsed = this._parseQr(qr.data);
+                if (raw) {
+                    let parsed = this._parseQr(raw);
 
                     if (parsed && parsed.exam_id && parsed.student_id) {
                         const qrKey = parsed.exam_id + '_' + parsed.student_id;

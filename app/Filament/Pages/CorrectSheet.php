@@ -65,7 +65,7 @@ class CorrectSheet extends Page implements HasForms
                     $query = Exam::with(['subject', 'stage', 'studyType'])
                         ->where('status', 'open');
                     if ($isTeacher) {
-                        $query->where('teacher_id', $user->id);
+                        $query->accessibleBy($user);
                     }
                     return $query->get()->mapWithKeys(fn ($exam) =>
                         [$exam->id => $exam->subject->name . ' - ' . $exam->stage->name . ' - ' . $exam->studyType->name . ' (' . $exam->exam_date->format('Y-m-d') . ')']

@@ -43,7 +43,7 @@ class ExamResource extends Resource
         $user = auth()->user();
 
         if ($user && $user->hasRole('teacher')) {
-            $query->where('teacher_id', $user->id);
+            $query->accessibleBy($user);
         }
 
         return $query;

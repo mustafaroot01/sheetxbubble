@@ -55,7 +55,7 @@ class ScanCorrect extends Page
         }
 
         $user = auth()->user();
-        if ($user->hasRole('teacher') && $exam->teacher_id !== $user->id) {
+        if (!$exam->isAccessibleBy($user)) {
             return ['error' => __('app.scan.not_your_exam')];
         }
 
@@ -109,7 +109,7 @@ class ScanCorrect extends Page
             }
 
             $user = auth()->user();
-            if ($user->hasRole('teacher') && $exam->teacher_id !== $user->id) {
+            if (!$exam->isAccessibleBy($user)) {
                 return ['error' => __('app.scan.not_your_exam')];
             }
 
@@ -185,7 +185,7 @@ class ScanCorrect extends Page
             }
 
             $user = auth()->user();
-            if ($user->hasRole('teacher') && $exam->teacher_id !== $user->id) {
+            if (!$exam->isAccessibleBy($user)) {
                 $this->errorMessage = __('app.scan.not_your_exam');
                 return;
             }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -39,6 +40,43 @@ class Exam extends Model
             'mark_per_question' => 'decimal:2',
             'pass_mark' => 'decimal:2',
         ];
+    }
+
+    /**
+     * Limit to exams a teacher may access: ones they created, plus any
+     * whose (stage, subject) pair matches one of their assignments.
+     */
+    public function scopeAccessibleBy(Builder $query, User $user): Builder
+    {
+        if (!$user->hasRole('teacher')) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $q) use ($user) {
+            $q->where('teacher_id', $user->id)
+                ->orWhereIn('subject_id', function ($sub) use ($user) {
+                    $sub->select('subject_id')
+                        ->from('teacher_assignments')
+                        ->where('teacher_id', $user->id)
+                        ->whereColumn('teacher_assignments.stage_id', 'exams.stage_id');
+                });
+        });
+    }
+
+    public function isAccessibleBy(User $user): bool
+    {
+        if (!$user->hasRole('teacher')) {
+            return true;
+        }
+
+        if ($this->teacher_id === $user->id) {
+            return true;
+        }
+
+        return TeacherAssignment::where('teacher_id', $user->id)
+            ->where('stage_id', $this->stage_id)
+            ->where('subject_id', $this->subject_id)
+            ->exists();
     }
 
     public function getActivitylogOptions(): LogOptions
