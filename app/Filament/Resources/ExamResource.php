@@ -199,7 +199,7 @@ class ExamResource extends Resource
                         $fields[] = Forms\Components\Select::make("model_answer.{$i}")
                             ->label(__('app.exam.q_num', ['num' => $i + 1]))
                             ->options($options)
-                            ->required()
+                            ->placeholder('-')
                             ->native(true);
                     }
 

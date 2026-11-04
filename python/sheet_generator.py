@@ -78,7 +78,7 @@ COL_GAP = 5 * mm
 COL_HDR_H = 5.5 * mm
 INST_H = 6 * mm
 FOOTER_H = 4 * mm
-CONT_HDR_H = 8 * mm
+CONT_HDR_H = 18 * mm
 INFO_ROW_H = 6.5 * mm
 
 
@@ -317,16 +317,20 @@ def _draw_cont_header(c, student, exam_id, subject_name, pnum, ptotal, design, s
     c.roundRect(MX, hy, UW, CONT_HDR_H, 3, fill=1, stroke=0)
 
     c.setFillColor(hc(design['header_text_color']))
-    c.setFont(AR, 7.5)
-    c.drawString(MX + 3 * mm, hy + CONT_HDR_H / 2 - 2,
-                 ar_t(f'{student["full_name"]}  |  {subject_name}  |  صفحة {pnum} من {ptotal}'))
+    c.setFont(AR, 9)
+    text_y = hy + CONT_HDR_H - 6 * mm
+    c.drawString(MX + 3 * mm, text_y,
+                 ar_t(f'{student["full_name"]}  |  {student.get("student_id", "")}'))
+    c.setFont(AR, 8)
+    c.drawString(MX + 3 * mm, text_y - 5 * mm,
+                 ar_t(f'{subject_name}  |  صفحة {pnum} من {ptotal}'))
 
     qr_img = _make_qr({'student_id': student['student_id'], 'exam_id': exam_id, 'stage_id': stage_id, 'study_type_id': study_type_id, 'page': pnum})
-    qs = CONT_HDR_H - 2 * mm
+    qs = CONT_HDR_H - 3 * mm
     qx = W - MX - qs - 2 * mm
-    qy = hy + 1 * mm
+    qy = hy + 1.5 * mm
     c.setFillColor(colors.white)
-    c.roundRect(qx - 1, qy - 1, qs + 2, qs + 2, 1, fill=1, stroke=0)
+    c.roundRect(qx - 1, qy - 1, qs + 2, qs + 2, 2, fill=1, stroke=0)
     c.drawImage(qr_img, qx, qy, width=qs, height=qs)
 
     return hy - 0.5 * mm
