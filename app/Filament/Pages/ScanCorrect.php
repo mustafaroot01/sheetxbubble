@@ -37,12 +37,23 @@ class ScanCorrect extends Page
     public ?string $overlayImage = null;
     public ?string $errorMessage = null;
 
+    // Public properties sync to the frontend reliably, unlike Livewire
+    // method return values inside Filament pages. The scan JS reads these.
+    public ?array $scanLookup = null;
+    public ?array $scanOutcome = null;
+
     /**
-     * Fast validation + student lookup only (no bubble processing).
-     * Returns student/exam info so the UI can show it immediately,
-     * before the slow OMR correction runs in a second request.
+     * Fast validation + student lookup only (no bubble processing), so the
+     * UI can show student info immediately before the slow OMR runs.
+     * Result is exposed via the $scanLookup property (read from JS).
      */
     public function lookupStudent(string $qrJson): array
+    {
+        $this->scanLookup = $this->resolveLookup($qrJson);
+        return $this->scanLookup;
+    }
+
+    private function resolveLookup(string $qrJson): array
     {
         $qrData = json_decode($qrJson, true);
         if (!$qrData || !isset($qrData['exam_id'], $qrData['student_id'])) {
@@ -84,6 +95,12 @@ class ScanCorrect extends Page
     }
 
     public function processImageWithQr(string $imageData, string $qrJson): array
+    {
+        $this->scanOutcome = $this->resolveCorrection($imageData, $qrJson);
+        return $this->scanOutcome;
+    }
+
+    private function resolveCorrection(string $imageData, string $qrJson): array
     {
         $this->scanResult = null;
         $this->showResult = false;

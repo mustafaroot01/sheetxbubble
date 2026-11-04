@@ -604,14 +604,18 @@
                 try {
                     const imageB64 = canvas.toDataURL('image/jpeg', 0.92);
 
-                    // Step 1: fast lookup so student info shows immediately
-                    const info = await this.$wire.lookupStudent(qrJson);
-                    this.debugServer = 'lookup: ' + (info === undefined ? 'NO-METHOD(opcache)' : JSON.stringify(info)).slice(0, 70);
+                    // Step 1: fast lookup so student info shows immediately.
+                    // Read the result from the synced property (reliable),
+                    // not the method return value (unreliable in Filament).
+                    await this.$wire.lookupStudent(qrJson);
+                    const info = this.$wire.get('scanLookup');
+                    this.debugServer = 'lookup: ' + JSON.stringify(info || null).slice(0, 70);
                     if (!info || info.error) { this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}'); return; }
                     this.currentStudent = info;
 
                     // Step 2: slow OMR correction
-                    const res = await this.$wire.processImageWithQr(imageB64, qrJson);
+                    await this.$wire.processImageWithQr(imageB64, qrJson);
+                    const res = this.$wire.get('scanOutcome');
                     if (!res || res.error) { this._onError(res ? res.error : '{{ __("app.scan.correction_failed") }}'); return; }
                     this._onResult(res.result);
                 } catch (e) {
