@@ -144,6 +144,7 @@ return [
         'correct_sheets' => 'Correct',
         'answer' => 'Answer',
         'model_answer_desc' => 'Add the correct answer for each question in order',
+        'select_stage_first' => 'Select a stage first',
     ],
 
     // Results

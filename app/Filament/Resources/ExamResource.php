@@ -63,7 +63,8 @@ class ExamResource extends Resource
                             ->label(__('app.exam.stage'))
                             ->required()
                             ->preload()
-                            ->native(false)
+                            ->searchable()
+                            ->relationship('stage', 'name')
                             ->options(function () use ($user, $isTeacher) {
                                 if ($isTeacher) {
                                     return TeacherAssignment::where('teacher_id', $user->id)
@@ -80,7 +81,8 @@ class ExamResource extends Resource
                             ->label(__('app.exam.subject'))
                             ->required()
                             ->preload()
-                            ->native(false)
+                            ->searchable()
+                            ->relationship('subject', 'name')
                             ->options(function (Get $get) use ($user, $isTeacher) {
                                 $stageId = $get('stage_id');
                                 if (!$stageId) return [];
@@ -98,13 +100,14 @@ class ExamResource extends Resource
                                 }
                                 return \App\Models\Subject::pluck('name', 'id');
                             })
-                            ->live(),
+                            ->live()
+                            ->hint(fn (Get $get) => !$get('stage_id') ? __('app.exam.select_stage_first') : ''),
                         Forms\Components\Select::make('study_type_id')
                             ->label(__('app.exam.study_type'))
                             ->required()
                             ->preload()
-                            ->native(false)
-                            ->options(\App\Models\StudyType::pluck('name', 'id')),
+                            ->searchable()
+                            ->relationship('studyType', 'name'),
                     ]),
                     Forms\Components\Grid::make(3)->schema([
                         Forms\Components\DatePicker::make('exam_date')

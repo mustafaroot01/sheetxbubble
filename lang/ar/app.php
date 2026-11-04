@@ -144,6 +144,7 @@ return [
         'correct_sheets' => 'تصحيح',
         'answer' => 'الإجابة',
         'model_answer_desc' => 'أضف الإجابة الصحيحة لكل سؤال بالتسلسل',
+        'select_stage_first' => 'اختر المرحلة أولاً',
     ],
 
     // Results
