@@ -33,18 +33,23 @@ php artisan filament:optimize 2>/dev/null || true
 php artisan icons:cache 2>/dev/null || true
 
 echo "▶ Resetting OPcache (so updated PHP classes take effect)..."
-# optimize:clear does NOT clear OPcache. The web (PHP-FPM) process keeps
-# the old compiled PHP until OPcache is reset, which makes new methods
-# look "missing". Trigger a reset from within the FPM process via a web hit.
-RESET_URL="${APP_PUBLIC_URL:-https://diyala.org}"
-echo "<?php if (function_exists('opcache_reset')) { opcache_reset(); } echo 'ok';" > public/_opcache_reset.php
-curl -sk "${RESET_URL%/}/_opcache_reset.php" >/dev/null 2>&1 && echo "  OPcache reset via web OK" || echo "  (web reset failed — restart PHP in Plesk if classes seem stale)"
-rm -f public/_opcache_reset.php
-# Also try a direct PHP-FPM reload if we have the rights (harmless if not)
-systemctl reload php*-fpm 2>/dev/null || true
+# optimize:clear does NOT clear OPcache. PHP-FPM keeps the old compiled
+# PHP until OPcache is reset, which makes new methods look "missing".
+# Trigger a reset from inside FPM via a web hit, bypassing Cloudflare by
+# resolving the domain straight to the local server (127.0.0.1).
+DOMAIN=$(grep -E '^APP_URL=' .env | sed -E 's#^APP_URL=https?://([^/"]+).*#\1#')
+case "$DOMAIN" in ''|localhost*|127.*) DOMAIN="diyala.org" ;; esac
+echo "<?php if (function_exists('opcache_reset')) opcache_reset(); echo 'OPCACHE_OK';" > public/_oc.php
+RESP=$(curl -sk --resolve "${DOMAIN}:443:127.0.0.1" "https://${DOMAIN}/_oc.php" 2>/dev/null)
+rm -f public/_oc.php
+if echo "$RESP" | grep -q OPCACHE_OK; then
+    echo "  OPcache reset OK"
+else
+    echo "  ⚠ Could not reset OPcache automatically."
+    echo "    Run as root:  su -  then  systemctl restart plesk-php84-fpm"
+fi
 
 echo "✔ Done. The app now runs in production mode with full caching."
-echo "  Note: after EVERY future git pull, run this script again"
-echo "  (cached config/routes/views must be rebuilt)."
-echo "  If updated code still doesn't show: Plesk > Websites & Domains"
-echo "  > restart services / PHP, which clears OPcache for sure."
+echo "  Note: after EVERY future git pull, run this script again."
+echo "  If updated code still doesn't show, clear OPcache as root:"
+echo "    su -  then  systemctl restart plesk-php84-fpm"
