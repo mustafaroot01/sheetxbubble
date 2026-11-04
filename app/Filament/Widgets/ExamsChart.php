@@ -34,7 +34,7 @@ class ExamsChart extends ChartWidget
                 ->whereMonth('created_at', $date->month);
 
             if ($isTeacher) {
-                $query->whereHas('exam', fn ($q) => $q->where('teacher_id', $user->id));
+                $query->whereHas('exam', fn ($q) => $q->accessibleBy($user));
             }
 
             $passData[] = (clone $query)->where('status', 'pass')->count();

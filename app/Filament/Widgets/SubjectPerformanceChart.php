@@ -30,7 +30,7 @@ class SubjectPerformanceChart extends ChartWidget
             ->groupBy('subjects.name');
 
         if ($isTeacher) {
-            $query->where('exams.teacher_id', $user->id);
+            \App\Models\Exam::applyAccessibleCondition($query, $user);
         }
 
         $results = $query->get();

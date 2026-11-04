@@ -28,7 +28,7 @@ class ListResults extends ListRecords
                             $query = Exam::with(['subject', 'stage']);
                             $user = auth()->user();
                             if ($user->hasRole('teacher')) {
-                                $query->where('teacher_id', $user->id);
+                                $query->accessibleBy($user);
                             }
                             return $query->get()->mapWithKeys(fn ($exam) =>
                                 [$exam->id => $exam->subject->name . ' - ' . $exam->stage->name . ' (' . $exam->exam_date->format('Y-m-d') . ')']

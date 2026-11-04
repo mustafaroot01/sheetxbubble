@@ -22,8 +22,8 @@ class StatsOverview extends BaseWidget
         $resultsQuery = Result::query();
 
         if ($isTeacher) {
-            $examsQuery->where('teacher_id', $user->id);
-            $resultsQuery->whereHas('exam', fn ($q) => $q->where('teacher_id', $user->id));
+            $examsQuery->accessibleBy($user);
+            $resultsQuery->whereHas('exam', fn ($q) => $q->accessibleBy($user));
         }
 
         $examsCount = $examsQuery->count();

@@ -26,7 +26,7 @@ class LatestResultsTable extends BaseWidget
                     ->with(['student', 'exam.subject'])
                     ->when(
                         auth()->user()->hasRole('teacher'),
-                        fn (Builder $q) => $q->whereHas('exam', fn ($q2) => $q2->where('teacher_id', auth()->id()))
+                        fn (Builder $q) => $q->whereHas('exam', fn ($q2) => $q2->accessibleBy(auth()->user()))
                     )
                     ->latest()
                     ->limit(10)

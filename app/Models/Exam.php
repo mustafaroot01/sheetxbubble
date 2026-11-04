@@ -48,18 +48,28 @@ class Exam extends Model
      */
     public function scopeAccessibleBy(Builder $query, User $user): Builder
     {
+        return self::applyAccessibleCondition($query, $user, 'exams');
+    }
+
+    /**
+     * Apply the "teacher may access this exam" condition to any query that
+     * exposes the exams table (directly or via a join), so the exam list,
+     * dashboard stats, charts, and results all share one rule.
+     */
+    public static function applyAccessibleCondition($query, User $user, string $table = 'exams')
+    {
         if (!$user->hasRole('teacher')) {
             return $query;
         }
 
-        return $query->where(function (Builder $q) use ($user) {
-            $q->where('exams.teacher_id', $user->id)
-                ->orWhereExists(function ($sub) use ($user) {
+        return $query->where(function ($q) use ($user, $table) {
+            $q->where("{$table}.teacher_id", $user->id)
+                ->orWhereExists(function ($sub) use ($user, $table) {
                     $sub->selectRaw('1')
                         ->from('teacher_assignments as ta')
                         ->where('ta.teacher_id', $user->id)
-                        ->whereColumn('ta.stage_id', 'exams.stage_id')
-                        ->whereColumn('ta.subject_id', 'exams.subject_id');
+                        ->whereColumn('ta.stage_id', "{$table}.stage_id")
+                        ->whereColumn('ta.subject_id', "{$table}.subject_id");
                 });
         });
     }

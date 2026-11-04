@@ -38,7 +38,7 @@ class ResultResource extends Resource
         $user = auth()->user();
 
         if ($user && $user->hasRole('teacher')) {
-            $query->whereHas('exam', fn (Builder $q) => $q->where('teacher_id', $user->id));
+            $query->whereHas('exam', fn (Builder $q) => $q->accessibleBy($user));
         }
 
         return $query;
