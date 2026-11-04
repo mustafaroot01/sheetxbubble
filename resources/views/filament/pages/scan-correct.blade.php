@@ -1,5 +1,7 @@
 <x-filament-panels::page>
-    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto">
+    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto"
+         x-on:scan-lookup.window="handleLookup($event.detail)"
+         x-on:scan-final.window="handleFinal($event.detail)">
 
         {{-- Error Alert --}}
         <div x-show="errorMsg" x-cloak x-transition class="rounded-xl bg-danger-50 dark:bg-danger-500/10 p-4 flex items-center gap-3 ring-1 ring-danger-300 dark:ring-danger-500/20">
@@ -400,6 +402,8 @@
             debugRaw: '',
             debugServer: '',
             detectorKind: '',
+            _pendingQr: null,
+            _pendingImg: null,
 
             _onResult(r) {
                 if (r && r.student_name) {
@@ -597,35 +601,59 @@
                 } catch(e) { return null; }
             },
 
-            async _autoCorrect(qrData, canvas) {
+            _autoCorrect(qrData, canvas) {
+                // Event-driven: the result comes back via scan-lookup / scan-final
+                // browser events (reliable in Filament), not return values.
                 this.processing = true;
                 this.currentStudent = null;
-                const qrJson = JSON.stringify(qrData);
+                this._pendingQr = JSON.stringify(qrData);
+                this._pendingImg = canvas.toDataURL('image/jpeg', 0.92);
                 try {
-                    const imageB64 = canvas.toDataURL('image/jpeg', 0.92);
-
-                    // Step 1: fast lookup so student info shows immediately.
-                    // Read the result from the synced property (reliable),
-                    // not the method return value (unreliable in Filament).
-                    await this.$wire.lookupStudent(qrJson);
-                    const info = this.$wire.get('scanLookup');
-                    this.debugServer = 'lookup: ' + JSON.stringify(info || null).slice(0, 70);
-                    if (!info || info.error) { this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}'); return; }
-                    this.currentStudent = info;
-
-                    // Step 2: slow OMR correction
-                    await this.$wire.processImageWithQr(imageB64, qrJson);
-                    const res = this.$wire.get('scanOutcome');
-                    if (!res || res.error) { this._onError(res ? res.error : '{{ __("app.scan.correction_failed") }}'); return; }
-                    this._onResult(res.result);
+                    this.$wire.lookupStudent(this._pendingQr);
                 } catch (e) {
-                    console.error('Auto-correct error:', e);
+                    console.error('lookup call error:', e);
                     this._onError('{{ __("app.scan.correction_failed") }}');
-                } finally {
-                    this.processing = false;
-                    this.currentStudent = null;
-                    this._resumeScanning();
+                    this._finishScan();
                 }
+            },
+
+            _eventPayload(detail) {
+                if (detail && detail.payload !== undefined) return detail.payload;
+                return Array.isArray(detail) ? detail[0] : detail;
+            },
+
+            handleLookup(detail) {
+                const info = this._eventPayload(detail);
+                this.debugServer = 'lookup: ' + JSON.stringify(info || null).slice(0, 70);
+                if (!info || info.error) {
+                    this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}');
+                    this._finishScan();
+                    return;
+                }
+                this.currentStudent = info;
+                try {
+                    this.$wire.processImageWithQr(this._pendingImg, this._pendingQr);
+                } catch (e) {
+                    console.error('correction call error:', e);
+                    this._onError('{{ __("app.scan.correction_failed") }}');
+                    this._finishScan();
+                }
+            },
+
+            handleFinal(detail) {
+                const res = this._eventPayload(detail);
+                if (!res || res.error) {
+                    this._onError(res ? res.error : '{{ __("app.scan.correction_failed") }}');
+                } else {
+                    this._onResult(res.result);
+                }
+                this._finishScan();
+            },
+
+            _finishScan() {
+                this.processing = false;
+                this.currentStudent = null;
+                this._resumeScanning();
             },
 
             handleFile(e) { const f = e.target.files[0]; if (f) this._preview(f); },
