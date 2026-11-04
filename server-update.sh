@@ -32,6 +32,19 @@ php artisan optimize
 php artisan filament:optimize 2>/dev/null || true
 php artisan icons:cache 2>/dev/null || true
 
+echo "▶ Resetting OPcache (so updated PHP classes take effect)..."
+# optimize:clear does NOT clear OPcache. The web (PHP-FPM) process keeps
+# the old compiled PHP until OPcache is reset, which makes new methods
+# look "missing". Trigger a reset from within the FPM process via a web hit.
+RESET_URL="${APP_PUBLIC_URL:-https://diyala.org}"
+echo "<?php if (function_exists('opcache_reset')) { opcache_reset(); } echo 'ok';" > public/_opcache_reset.php
+curl -sk "${RESET_URL%/}/_opcache_reset.php" >/dev/null 2>&1 && echo "  OPcache reset via web OK" || echo "  (web reset failed — restart PHP in Plesk if classes seem stale)"
+rm -f public/_opcache_reset.php
+# Also try a direct PHP-FPM reload if we have the rights (harmless if not)
+systemctl reload php*-fpm 2>/dev/null || true
+
 echo "✔ Done. The app now runs in production mode with full caching."
 echo "  Note: after EVERY future git pull, run this script again"
 echo "  (cached config/routes/views must be rebuilt)."
+echo "  If updated code still doesn't show: Plesk > Websites & Domains"
+echo "  > restart services / PHP, which clears OPcache for sure."
