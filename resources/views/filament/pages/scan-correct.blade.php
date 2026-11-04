@@ -124,8 +124,14 @@
                         <div x-show="cameraOn" x-cloak class="flex items-center gap-1.5 text-xs font-mono text-gray-400 bg-gray-50 dark:bg-gray-800 px-2 py-1 rounded-md">
                             <span class="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse"></span>
                             <span x-text="scanCount"></span>
+                            <span x-text="detectorKind" class="text-[10px] opacity-70"></span>
                         </div>
                     </div>
+                </div>
+
+                {{-- Debug readout (helps diagnose QR detection) --}}
+                <div x-show="cameraOn" x-cloak class="px-4 py-1.5 bg-gray-900 text-gray-300 text-[11px] font-mono border-b border-gray-800 truncate">
+                    <span x-text="'QR: ' + (debugRaw || '—')"></span>
                 </div>
 
                 {{-- Camera View --}}
@@ -390,6 +396,8 @@
             toastProgress: 100,
             toastTimer: null,
             currentStudent: null,
+            debugRaw: '',
+            detectorKind: '',
 
             _onResult(r) {
                 if (r && r.student_name) {
@@ -513,6 +521,7 @@
                             ? new BarcodeDetector({ formats: ['qr_code'] })
                             : null;
                     } catch (e) { this._bd = null; }
+                    this.detectorKind = this._bd ? 'native' : 'jsQR';
                 }
                 if (this._bd) {
                     try {
@@ -530,7 +539,7 @@
                 if (!v || v.videoWidth === 0 || v.readyState < 2) return;
 
                 const c = this.$refs.scanCanvas;
-                const scale = Math.min(1, 1100 / v.videoWidth);
+                const scale = Math.min(1, 1600 / v.videoWidth);
                 const w = Math.round(v.videoWidth * scale);
                 const h = Math.round(v.videoHeight * scale);
                 c.width = w;
@@ -544,6 +553,7 @@
                 const raw = await this._detectQr(c, w, h, ctx);
 
                 if (raw) {
+                    this.debugRaw = String(raw).slice(0, 40);
                     let parsed = this._parseQr(raw);
 
                     if (parsed && parsed.exam_id && parsed.student_id) {
