@@ -602,19 +602,26 @@
             },
 
             _autoCorrect(qrData, canvas) {
-                // Event-driven: the result comes back via scan-lookup / scan-final
-                // browser events (reliable in Filament), not return values.
+                // Deliver results via scan-lookup / scan-final native events
+                // fired from $this->js(). Instrumented so the on-screen
+                // "server:" line shows exactly where the flow stops.
                 this.processing = true;
                 this.currentStudent = null;
                 this._pendingQr = JSON.stringify(qrData);
                 this._pendingImg = canvas.toDataURL('image/jpeg', 0.92);
                 this._armWatchdog();
-                try {
-                    this.$wire.lookupStudent(this._pendingQr);
-                } catch (e) {
-                    console.error('lookup call error:', e);
-                    this._onError('{{ __("app.scan.correction_failed") }}');
-                    this._finishScan();
+                this.debugServer = 'server: calling lookup...';
+                const p = this.$wire.lookupStudent(this._pendingQr);
+                if (p && typeof p.then === 'function') {
+                    p.then((ret) => {
+                        if (this.debugServer === 'server: calling lookup...') {
+                            this.debugServer = 'server: call OK ret=' + JSON.stringify(ret) + ' (awaiting event)';
+                        }
+                    }).catch((e) => {
+                        this.debugServer = 'server: CALL FAILED ' + (e && e.message ? e.message : e);
+                        this._onError('{{ __("app.scan.correction_failed") }}');
+                        this._finishScan();
+                    });
                 }
             },
 
