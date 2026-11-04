@@ -194,14 +194,14 @@ class ExamResource extends Resource
                         ];
                     }
 
+                    $optionsWithClear = ['_clear' => '✕ ' . __('app.exam.clear_answer')] + $options;
+
                     $fields = [];
                     for ($i = 0; $i < $count; $i++) {
                         $fields[] = Forms\Components\Select::make("model_answer.{$i}")
                             ->label(__('app.exam.q_num', ['num' => $i + 1]))
-                            ->options($options)
-                            ->placeholder('-')
-                            ->searchable(false)
-                            ->clearable();
+                            ->options($optionsWithClear)
+                            ->native(true);
                     }
 
                     return [
