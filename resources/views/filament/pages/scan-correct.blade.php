@@ -12,6 +12,34 @@
             </button>
         </div>
 
+        {{-- Camera result panel (shows the annotated sheet to verify reading) --}}
+        <div x-show="resultPanel" x-cloak class="bg-white dark:bg-gray-900 rounded-xl ring-1 ring-gray-950/5 dark:ring-white/10 shadow-sm overflow-hidden">
+            <div class="px-5 py-4 flex items-center justify-between gap-4"
+                 :class="resultPanel && resultPanel.result.status === 'pass' ? 'bg-success-600' : 'bg-danger-600'">
+                <div class="min-w-0">
+                    <p class="text-white font-bold text-base truncate" x-text="resultPanel && resultPanel.student.name"></p>
+                    <p class="text-white/60 text-xs truncate" x-text="resultPanel && (resultPanel.student.id + ' • ' + resultPanel.student.exam)"></p>
+                </div>
+                <div class="text-end shrink-0">
+                    <div class="text-white font-black text-3xl leading-none">
+                        <span x-text="resultPanel && resultPanel.result.score"></span><span class="text-lg text-white/40" x-text="resultPanel && ('/' + resultPanel.result.total_mark)"></span>
+                    </div>
+                    <div class="text-white/60 text-xs font-semibold" x-text="resultPanel && (resultPanel.result.percentage + '% · ' + resultPanel.result.correct_count + ' / ' + resultPanel.result.wrong_count)"></div>
+                </div>
+            </div>
+            <template x-if="resultPanel && resultPanel.overlay">
+                <div class="p-3">
+                    <img :src="'data:image/jpeg;base64,' + resultPanel.overlay" class="w-full rounded-lg" />
+                </div>
+            </template>
+            <div class="p-3 border-t border-gray-100 dark:border-gray-800 flex justify-center">
+                <button @click="closeResult()" class="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-primary-500 active:scale-[0.98] transition-all">
+                    <x-heroicon-s-camera class="w-5 h-5" />
+                    {{ __('app.scan.scan_another') }}
+                </button>
+            </div>
+        </div>
+
         @if($showResult && $scanResult)
         {{-- ===== UPLOAD RESULT VIEW ===== --}}
         <div class="space-y-5">
@@ -400,6 +428,7 @@
             debugRaw: '',
             debugServer: '',
             detectorKind: '',
+            resultPanel: null,
 
             _onResult(r) {
                 if (r && r.student_name) {
@@ -648,6 +677,13 @@
                         status: data.result.status,
                         details: data.result.details,
                     });
+                    // Pause and show the annotated sheet so the reading can be
+                    // verified at a glance.
+                    this.resultPanel = {
+                        student: data.student,
+                        result: data.result,
+                        overlay: data.result.overlay || null,
+                    };
                 } catch (e) {
                     this.debugServer = 'server: FETCH ERR ' + (e && e.message ? e.message : String(e));
                     this._onError('{{ __("app.scan.service_unavailable") }}');
@@ -657,7 +693,13 @@
             _finishScan() {
                 this.processing = false;
                 this.currentStudent = null;
-                this._resumeScanning();
+                // Stay paused while a result panel is shown; otherwise keep scanning.
+                if (!this.resultPanel) this._resumeScanning();
+            },
+
+            closeResult() {
+                this.resultPanel = null;
+                if (this.cameraOn) this._resumeScanning();
             },
 
             handleFile(e) { const f = e.target.files[0]; if (f) this._preview(f); },
