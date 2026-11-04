@@ -53,12 +53,13 @@ class Exam extends Model
         }
 
         return $query->where(function (Builder $q) use ($user) {
-            $q->where('teacher_id', $user->id)
-                ->orWhereIn('subject_id', function ($sub) use ($user) {
-                    $sub->select('subject_id')
-                        ->from('teacher_assignments')
-                        ->where('teacher_id', $user->id)
-                        ->whereColumn('teacher_assignments.stage_id', 'exams.stage_id');
+            $q->where('exams.teacher_id', $user->id)
+                ->orWhereExists(function ($sub) use ($user) {
+                    $sub->selectRaw('1')
+                        ->from('teacher_assignments as ta')
+                        ->where('ta.teacher_id', $user->id)
+                        ->whereColumn('ta.stage_id', 'exams.stage_id')
+                        ->whereColumn('ta.subject_id', 'exams.subject_id');
                 });
         });
     }

@@ -130,8 +130,9 @@
                 </div>
 
                 {{-- Debug readout (helps diagnose QR detection) --}}
-                <div x-show="cameraOn" x-cloak class="px-4 py-1.5 bg-gray-900 text-gray-300 text-[11px] font-mono border-b border-gray-800 truncate">
-                    <span x-text="'QR: ' + (debugRaw || '—')"></span>
+                <div x-show="cameraOn" x-cloak class="px-4 py-1.5 bg-gray-900 text-gray-300 text-[11px] font-mono border-b border-gray-800 space-y-0.5">
+                    <div class="truncate" x-text="'QR: ' + (debugRaw || '—')"></div>
+                    <div class="truncate text-amber-400" x-text="debugServer || 'server: —'"></div>
                 </div>
 
                 {{-- Camera View --}}
@@ -397,6 +398,7 @@
             toastTimer: null,
             currentStudent: null,
             debugRaw: '',
+            debugServer: '',
             detectorKind: '',
 
             _onResult(r) {
@@ -604,6 +606,7 @@
 
                     // Step 1: fast lookup so student info shows immediately
                     const info = await this.$wire.lookupStudent(qrJson);
+                    this.debugServer = 'lookup: ' + (info === undefined ? 'NO-METHOD(opcache)' : JSON.stringify(info)).slice(0, 70);
                     if (!info || info.error) { this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}'); return; }
                     this.currentStudent = info;
 
