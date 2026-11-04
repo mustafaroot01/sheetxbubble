@@ -1,0 +1,158 @@
+@import '/vendor/filament/filament/resources/css/theme.css';
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --font-family: 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+    --sidebar-width: 17rem;
+}
+
+/* Base font */
+body, .fi-body {
+    font-family: var(--font-family) !important;
+}
+
+/* Sidebar styling */
+.fi-sidebar {
+    border-inline-end-width: 0 !important;
+    box-shadow: 4px 0 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+.dark .fi-sidebar {
+    box-shadow: 4px 0 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Sidebar nav items */
+.fi-sidebar-nav-groups {
+    gap: 0.25rem;
+}
+
+.fi-sidebar-item a {
+    border-radius: 0.5rem;
+    transition: all 0.15s ease;
+}
+
+/* Top bar */
+.fi-topbar {
+    border-bottom-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.dark .fi-topbar {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Stats cards */
+.fi-wi-stats-overview-stat {
+    border-radius: 1rem !important;
+    border-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fi-wi-stats-overview-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.dark .fi-wi-stats-overview-stat {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Sections / cards */
+.fi-section {
+    border-radius: 1rem !important;
+    overflow: hidden;
+    border-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.dark .fi-section {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Tables */
+.fi-ta {
+    border-radius: 1rem !important;
+    overflow: hidden;
+    border-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.dark .fi-ta {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.fi-ta-row {
+    transition: background-color 0.1s ease;
+}
+
+/* Badges */
+.fi-badge {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+/* Buttons */
+.fi-btn {
+    border-radius: 0.5rem !important;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.fi-btn:hover {
+    transform: translateY(-1px);
+}
+
+/* Modal */
+.fi-modal-window {
+    border-radius: 1rem !important;
+}
+
+/* Chart widgets */
+.fi-wi-chart {
+    border-radius: 1rem !important;
+    border-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.dark .fi-wi-chart {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Table widget */
+.fi-wi-table {
+    border-radius: 1rem !important;
+    border-width: 0 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.dark .fi-wi-table {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Form inputs */
+.fi-input-wrp {
+    border-radius: 0.5rem !important;
+    transition: box-shadow 0.15s ease;
+}
+
+/* Infolist entries */
+.fi-in-entry-wrp {
+    border-radius: 0.75rem !important;
+}
+
+/* Notification banners */
+.fi-no {
+    border-radius: 0.75rem !important;
+}
+
+/* Login page */
+.fi-simple-page {
+    background: linear-gradient(135deg, rgb(99, 102, 241) 0%, rgb(79, 70, 229) 50%, rgb(67, 56, 202) 100%);
+}
+
+.fi-simple-main-ctn {
+    border-radius: 1.5rem !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+}
