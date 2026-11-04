@@ -129,8 +129,8 @@
                 </div>
 
                 {{-- Camera View --}}
-                <div class="relative bg-gray-950" style="aspect-ratio:16/10">
-                    <video x-ref="video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+                <div class="relative bg-gray-950" style="aspect-ratio:3/4; max-height:72vh">
+                    <video x-ref="video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-contain"></video>
                     <canvas x-ref="scanCanvas" class="hidden"></canvas>
 
                     {{-- Idle State --}}
@@ -510,7 +510,7 @@
                 if (!v || v.videoWidth === 0 || v.readyState < 2) return;
 
                 const c = this.$refs.scanCanvas;
-                const scale = Math.min(1, 640 / v.videoWidth);
+                const scale = Math.min(1, 1100 / v.videoWidth);
                 const w = Math.round(v.videoWidth * scale);
                 const h = Math.round(v.videoHeight * scale);
                 c.width = w;
