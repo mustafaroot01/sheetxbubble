@@ -154,18 +154,6 @@ class ExamResource extends Resource
                                 if ($total && $count > 0) {
                                     $set('mark_per_question', round($total / $count, 2));
                                 }
-                                if ($count > 0) {
-                                    $current = $get('model_answer') ?? [];
-                                    $currentCount = count($current);
-                                    if ($currentCount < $count) {
-                                        for ($i = $currentCount; $i < $count; $i++) {
-                                            $current[] = null;
-                                        }
-                                    } elseif ($currentCount > $count) {
-                                        $current = array_slice($current, 0, $count, true);
-                                    }
-                                    $set('model_answer', $current);
-                                }
                             }),
                         Forms\Components\TextInput::make('mark_per_question')
                             ->label(__('app.exam.mark_per_question'))
@@ -192,35 +180,33 @@ class ExamResource extends Resource
             Forms\Components\Section::make(__('app.exam.model_answer'))
                 ->icon('heroicon-o-key')
                 ->description(__('app.exam.model_answer_desc'))
-                ->schema([
-                    Forms\Components\Repeater::make('model_answer')
-                        ->label('')
-                        ->afterStateHydrated(function (Forms\Components\Repeater $component, $state) {
-                            if (!is_array($state)) return;
-                            $first = reset($state);
-                            if (is_string($first)) {
-                                $component->state(array_values($state));
-                            }
-                        })
-                        ->simple(
-                            Forms\Components\Select::make('answer')
-                                ->options(function (Get $get) {
-                                    $count = (int) ($get('../../choices_count') ?: 4);
-                                    $labels = array_slice(['A','B','C','D','E','F'], 0, $count);
-                                    return array_combine($labels, $labels);
-                                })
-                                ->required()
-                                ->native(true)
-                        )
-                        ->required()
-                        ->minItems(1)
-                        ->defaultItems(0)
-                        ->maxItems(fn (Get $get) => (int) ($get('question_count') ?: 200))
-                        ->addActionLabel(__('app.exam.add_answer'))
-                        ->grid(6)
-                        ->reorderable(false)
-                        ->deletable(false),
-                ]),
+                ->schema(function (Get $get) {
+                    $count = (int) ($get('question_count') ?: 0);
+                    $choices = (int) ($get('choices_count') ?: 4);
+                    $labels = array_slice(['A','B','C','D','E','F'], 0, $choices);
+                    $options = array_combine($labels, $labels);
+
+                    if ($count === 0) {
+                        return [
+                            Forms\Components\Placeholder::make('no_questions')
+                                ->label('')
+                                ->content(__('app.exam.set_question_count_first')),
+                        ];
+                    }
+
+                    $fields = [];
+                    for ($i = 0; $i < $count; $i++) {
+                        $fields[] = Forms\Components\Select::make("model_answer.{$i}")
+                            ->label(__('app.exam.q_num', ['num' => $i + 1]))
+                            ->options($options)
+                            ->required()
+                            ->native(true);
+                    }
+
+                    return [
+                        Forms\Components\Grid::make(6)->schema($fields),
+                    ];
+                }),
         ]);
     }
 

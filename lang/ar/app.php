@@ -146,6 +146,8 @@ return [
         'model_answer_desc' => 'أضف الإجابة الصحيحة لكل سؤال بالتسلسل',
         'select_stage_first' => 'اختر المرحلة أولاً',
         'select' => 'اختر',
+        'q_num' => 'س:num',
+        'set_question_count_first' => 'حدد عدد الأسئلة أولاً لإظهار حقول الإجابات',
     ],
 
     // Results
