@@ -148,6 +148,7 @@ return [
         'select' => 'Select',
         'q_num' => 'Q:num',
         'set_question_count_first' => 'Set the question count first to show answer fields',
+        'clear_answer' => 'Delete',
     ],
 
     // Results

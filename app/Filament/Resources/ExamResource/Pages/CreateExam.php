@@ -17,6 +17,10 @@ class CreateExam extends CreateRecord
             $data['mark_per_question'] = round($data['total_mark'] / $data['question_count'], 2);
         }
 
+        if (isset($data['model_answer']) && is_array($data['model_answer'])) {
+            $data['model_answer'] = array_values(array_filter($data['model_answer'], fn ($v) => $v !== null && $v !== '' && $v !== '_clear'));
+        }
+
         return $data;
     }
 }
