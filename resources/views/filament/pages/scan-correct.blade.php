@@ -1,7 +1,5 @@
 <x-filament-panels::page>
-    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto"
-         x-on:scan-lookup.window="handleLookup($event.detail)"
-         x-on:scan-final.window="handleFinal($event.detail)">
+    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto">
 
         {{-- Error Alert --}}
         <div x-show="errorMsg" x-cloak x-transition class="rounded-xl bg-danger-50 dark:bg-danger-500/10 p-4 flex items-center gap-3 ring-1 ring-danger-300 dark:ring-danger-500/20">
@@ -402,8 +400,6 @@
             debugRaw: '',
             debugServer: '',
             detectorKind: '',
-            _pendingQr: null,
-            _pendingImg: null,
 
             _onResult(r) {
                 if (r && r.student_name) {
@@ -601,78 +597,59 @@
                 } catch(e) { return null; }
             },
 
-            _autoCorrect(qrData, canvas) {
-                // Deliver results via scan-lookup / scan-final native events
-                // fired from $this->js(). Instrumented so the on-screen
-                // "server:" line shows exactly where the flow stops.
+            async _autoCorrect(qrData, canvas) {
                 this.processing = true;
                 this.currentStudent = null;
-                this._pendingQr = JSON.stringify(qrData);
-                this._pendingImg = canvas.toDataURL('image/jpeg', 0.92);
-                this._armWatchdog();
-                this.debugServer = 'server: calling lookup...';
-                const p = this.$wire.lookupStudent(this._pendingQr);
-                if (p && typeof p.then === 'function') {
-                    p.then((ret) => {
-                        if (this.debugServer === 'server: calling lookup...') {
-                            this.debugServer = 'server: call OK ret=' + JSON.stringify(ret) + ' (awaiting event)';
-                        }
-                    }).catch((e) => {
-                        this.debugServer = 'server: CALL FAILED ' + (e && e.message ? e.message : e);
-                        this._onError('{{ __("app.scan.correction_failed") }}');
-                        this._finishScan();
-                    });
-                }
-            },
-
-            _armWatchdog() {
-                if (this._watchdog) clearTimeout(this._watchdog);
-                // If no scan-lookup/scan-final event arrives in time, recover
-                // instead of hanging forever on "correcting".
-                this._watchdog = setTimeout(() => {
-                    if (this.processing) {
-                        this.debugServer = 'server: TIMEOUT (no event received)';
-                        this._onError('{{ __("app.scan.correction_failed") }}');
-                        this._finishScan();
-                    }
-                }, 40000);
-            },
-
-            _eventPayload(detail) {
-                if (detail && detail.payload !== undefined) return detail.payload;
-                return Array.isArray(detail) ? detail[0] : detail;
-            },
-
-            handleLookup(detail) {
-                const info = this._eventPayload(detail);
-                this.debugServer = 'lookup: ' + JSON.stringify(info || null).slice(0, 70);
-                if (!info || info.error) {
-                    this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}');
-                    this._finishScan();
-                    return;
-                }
-                this.currentStudent = info;
-                try {
-                    this.$wire.processImageWithQr(this._pendingImg, this._pendingQr);
-                } catch (e) {
-                    console.error('correction call error:', e);
-                    this._onError('{{ __("app.scan.correction_failed") }}');
-                    this._finishScan();
-                }
-            },
-
-            handleFinal(detail) {
-                const res = this._eventPayload(detail);
-                if (!res || res.error) {
-                    this._onError(res ? res.error : '{{ __("app.scan.correction_failed") }}');
-                } else {
-                    this._onResult(res.result);
-                }
+                await this._sendScan(qrData, canvas);
                 this._finishScan();
             },
 
+            // Plain fetch to a normal Laravel route — no Livewire. The JSON
+            // response comes straight back, which is reliable unlike Livewire
+            // return values / events inside a Filament page.
+            async _sendScan(qrData, canvas) {
+                this.debugServer = 'server: sending...';
+                const imageB64 = canvas.toDataURL('image/jpeg', 0.85);
+                try {
+                    const resp = await fetch('{{ route("scan.process") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        },
+                        body: JSON.stringify({ qr: JSON.stringify(qrData), image: imageB64 }),
+                    });
+                    if (!resp.ok) {
+                        this.debugServer = 'server: HTTP ' + resp.status;
+                        this._onError('{{ __("app.scan.correction_failed") }} (' + resp.status + ')');
+                        return;
+                    }
+                    const data = await resp.json();
+                    this.debugServer = 'server: ' + (data.ok ? 'OK' : ('err=' + data.error));
+                    if (!data.ok) {
+                        this._onError(data.error || '{{ __("app.scan.correction_failed") }}');
+                        return;
+                    }
+                    this._onResult({
+                        student_name: data.student.name,
+                        student_id: data.student.id,
+                        exam_name: data.student.exam,
+                        score: data.result.score,
+                        total_mark: data.result.total_mark,
+                        correct_count: data.result.correct_count,
+                        wrong_count: data.result.wrong_count,
+                        percentage: data.result.percentage,
+                        status: data.result.status,
+                        details: data.result.details,
+                    });
+                } catch (e) {
+                    this.debugServer = 'server: FETCH ERR ' + (e && e.message ? e.message : String(e));
+                    this._onError('{{ __("app.scan.service_unavailable") }}');
+                }
+            },
+
             _finishScan() {
-                if (this._watchdog) { clearTimeout(this._watchdog); this._watchdog = null; }
                 this.processing = false;
                 this.currentStudent = null;
                 this._resumeScanning();
@@ -686,9 +663,29 @@
             async uploadCorrect() {
                 if (!this.previewUrl || this.processing) return;
                 this.processing = true;
-                try { await this.$wire.processImage(this.previewUrl); }
-                catch (e) { console.error(e); }
-                this.processing = false;
+                this.currentStudent = null;
+                try {
+                    const img = new Image();
+                    img.src = this.previewUrl;
+                    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('image load failed')); });
+                    const c = this.$refs.scanCanvas;
+                    c.width = img.naturalWidth;
+                    c.height = img.naturalHeight;
+                    const ctx = c.getContext('2d', { willReadFrequently: true });
+                    ctx.drawImage(img, 0, 0);
+                    const raw = await this._detectQr(c, c.width, c.height, ctx);
+                    const parsed = raw ? this._parseQr(raw) : null;
+                    if (!parsed || !parsed.exam_id || !parsed.student_id) {
+                        this._onError('{{ __("app.scan.qr_not_found") }}');
+                        return;
+                    }
+                    await this._sendScan(parsed, c);
+                } catch (e) {
+                    this.debugServer = 'server: UPLOAD ERR ' + (e && e.message ? e.message : String(e));
+                    this._onError('{{ __("app.scan.correction_failed") }}');
+                } finally {
+                    this.processing = false;
+                }
             }
         }
     }
