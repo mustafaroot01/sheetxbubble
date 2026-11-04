@@ -61,10 +61,9 @@ class ExamResource extends Resource
                     Forms\Components\Grid::make(3)->schema([
                         Forms\Components\Select::make('stage_id')
                             ->label(__('app.exam.stage'))
-                            ->relationship('stage', 'name')
                             ->required()
                             ->preload()
-                            ->searchable()
+                            ->native(false)
                             ->options(function () use ($user, $isTeacher) {
                                 if ($isTeacher) {
                                     return TeacherAssignment::where('teacher_id', $user->id)
@@ -79,10 +78,9 @@ class ExamResource extends Resource
                             ->afterStateUpdated(fn (Set $set) => $set('subject_id', null)),
                         Forms\Components\Select::make('subject_id')
                             ->label(__('app.exam.subject'))
-                            ->relationship('subject', 'name')
                             ->required()
                             ->preload()
-                            ->searchable()
+                            ->native(false)
                             ->options(function (Get $get) use ($user, $isTeacher) {
                                 $stageId = $get('stage_id');
                                 if (!$stageId) return [];
@@ -103,10 +101,10 @@ class ExamResource extends Resource
                             ->live(),
                         Forms\Components\Select::make('study_type_id')
                             ->label(__('app.exam.study_type'))
-                            ->relationship('studyType', 'name')
                             ->required()
                             ->preload()
-                            ->searchable(),
+                            ->native(false)
+                            ->options(\App\Models\StudyType::pluck('name', 'id')),
                     ]),
                     Forms\Components\Grid::make(3)->schema([
                         Forms\Components\DatePicker::make('exam_date')
@@ -149,12 +147,25 @@ class ExamResource extends Resource
                             ->required()
                             ->numeric()
                             ->minValue(1)
+                            ->maxValue(200)
                             ->live(onBlur: true)
                             ->afterStateUpdated(function (Get $get, Set $set) {
                                 $total = $get('total_mark');
-                                $count = $get('question_count');
-                                if ($total && $count && $count > 0) {
+                                $count = (int) $get('question_count');
+                                if ($total && $count > 0) {
                                     $set('mark_per_question', round($total / $count, 2));
+                                }
+                                if ($count > 0) {
+                                    $current = $get('model_answer') ?? [];
+                                    $currentCount = count($current);
+                                    if ($currentCount < $count) {
+                                        for ($i = $currentCount; $i < $count; $i++) {
+                                            $current[] = ['answer' => null];
+                                        }
+                                    } elseif ($currentCount > $count) {
+                                        $current = array_slice($current, 0, $count, true);
+                                    }
+                                    $set('model_answer', $current);
                                 }
                             }),
                         Forms\Components\TextInput::make('mark_per_question')
@@ -210,6 +221,7 @@ class ExamResource extends Resource
                         ->required()
                         ->minItems(1)
                         ->defaultItems(0)
+                        ->maxItems(fn (Get $get) => (int) ($get('question_count') ?: 200))
                         ->addActionLabel(__('app.exam.add_answer'))
                         ->itemLabel(function (array $state, $component): ?string {
                             $items = $component->getState() ?? [];
