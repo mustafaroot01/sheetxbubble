@@ -145,6 +145,7 @@ return [
         'answer' => 'الإجابة',
         'model_answer_desc' => 'أضف الإجابة الصحيحة لكل سؤال بالتسلسل',
         'select_stage_first' => 'اختر المرحلة أولاً',
+        'select' => 'اختر',
     ],
 
     // Results

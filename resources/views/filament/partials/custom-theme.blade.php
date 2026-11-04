@@ -58,7 +58,7 @@
     /* ===== Sections / Form Cards ===== */
     .fi-section {
         border-radius: 1rem !important;
-        overflow: hidden;
+        overflow: visible;
         border-width: 0 !important;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }

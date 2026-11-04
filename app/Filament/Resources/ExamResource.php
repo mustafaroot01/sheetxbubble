@@ -62,9 +62,7 @@ class ExamResource extends Resource
                         Forms\Components\Select::make('stage_id')
                             ->label(__('app.exam.stage'))
                             ->required()
-                            ->preload()
-                            ->searchable()
-                            ->relationship('stage', 'name')
+                            ->native(true)
                             ->options(function () use ($user, $isTeacher) {
                                 if ($isTeacher) {
                                     return TeacherAssignment::where('teacher_id', $user->id)
@@ -80,9 +78,7 @@ class ExamResource extends Resource
                         Forms\Components\Select::make('subject_id')
                             ->label(__('app.exam.subject'))
                             ->required()
-                            ->preload()
-                            ->searchable()
-                            ->relationship('subject', 'name')
+                            ->native(true)
                             ->options(function (Get $get) use ($user, $isTeacher) {
                                 $stageId = $get('stage_id');
                                 if (!$stageId) return [];
@@ -101,13 +97,12 @@ class ExamResource extends Resource
                                 return \App\Models\Subject::pluck('name', 'id');
                             })
                             ->live()
-                            ->hint(fn (Get $get) => !$get('stage_id') ? __('app.exam.select_stage_first') : ''),
+                            ->placeholder(fn (Get $get) => !$get('stage_id') ? __('app.exam.select_stage_first') : __('app.exam.select')),
                         Forms\Components\Select::make('study_type_id')
                             ->label(__('app.exam.study_type'))
                             ->required()
-                            ->preload()
-                            ->searchable()
-                            ->relationship('studyType', 'name'),
+                            ->native(true)
+                            ->options(\App\Models\StudyType::pluck('name', 'id')),
                     ]),
                     Forms\Components\Grid::make(3)->schema([
                         Forms\Components\DatePicker::make('exam_date')
@@ -117,6 +112,7 @@ class ExamResource extends Resource
                             ->displayFormat('Y-m-d'),
                         Forms\Components\Select::make('status')
                             ->label(__('app.exam.status'))
+                            ->native(true)
                             ->options([
                                 'open' => __('app.exam.status_open'),
                                 'closed' => __('app.exam.status_closed'),
