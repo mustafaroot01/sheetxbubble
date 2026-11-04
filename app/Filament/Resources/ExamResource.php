@@ -197,6 +197,7 @@ class ExamResource extends Resource
                     $cells = [];
                     for ($i = 0; $i < $count; $i++) {
                         $path = "model_answer.{$i}";
+                        $idx = $i;
                         $cells[] = Forms\Components\Group::make([
                             Forms\Components\Select::make($path)
                                 ->label(__('app.exam.q_num', ['num' => $i + 1]))
@@ -204,14 +205,35 @@ class ExamResource extends Resource
                                 ->placeholder('-')
                                 ->native(true),
                             Forms\Components\Actions::make([
-                                Forms\Components\Actions\Action::make("clear_{$i}")
-                                    ->label(__('app.exam.clear_answer'))
-                                    ->icon('heroicon-m-x-mark')
+                                Forms\Components\Actions\Action::make("remove_{$i}")
+                                    ->label(__('app.exam.remove_question'))
+                                    ->icon('heroicon-m-trash')
                                     ->color('danger')
                                     ->size('xs')
                                     ->link()
-                                    ->visible(fn (Get $get) => filled($get($path)))
-                                    ->action(fn (Set $set) => $set($path, null)),
+                                    ->requiresConfirmation()
+                                    ->action(function (Get $get, Set $set) use ($idx) {
+                                        $count = (int) ($get('question_count') ?: 0);
+                                        if ($count <= 1) return;
+
+                                        $answers = [];
+                                        for ($j = 0; $j < $count; $j++) {
+                                            $answers[$j] = $get("model_answer.{$j}");
+                                        }
+                                        array_splice($answers, $idx, 1);
+                                        foreach ($answers as $j => $val) {
+                                            $set("model_answer.{$j}", $val);
+                                        }
+                                        $set('model_answer.' . ($count - 1), null);
+
+                                        $newCount = $count - 1;
+                                        $set('question_count', $newCount);
+
+                                        $total = (float) ($get('total_mark') ?: 0);
+                                        if ($total > 0 && $newCount > 0) {
+                                            $set('mark_per_question', round($total / $newCount, 2));
+                                        }
+                                    }),
                             ])->fullWidth(),
                         ])->extraAttributes([
                             'class' => 'rounded-lg border border-gray-200 dark:border-gray-700 p-2',

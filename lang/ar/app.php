@@ -149,6 +149,7 @@ return [
         'q_num' => 'س:num',
         'set_question_count_first' => 'حدد عدد الأسئلة أولاً لإظهار حقول الإجابات',
         'clear_answer' => 'حذف',
+        'remove_question' => 'حذف السؤال',
     ],
 
     // Results
