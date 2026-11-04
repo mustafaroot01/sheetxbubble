@@ -626,7 +626,12 @@
                         return;
                     }
                     const data = await resp.json();
-                    this.debugServer = 'server: ' + (data.ok ? 'OK' : ('err=' + data.error));
+                    if (data.ok) {
+                        const dbg = data.debug || {};
+                        this.debugServer = 'server: OK detected=' + (dbg.detected ?? '?') + ' markers=' + (dbg.has_markers ? 'yes' : 'NO');
+                    } else {
+                        this.debugServer = 'server: err=' + data.error;
+                    }
                     if (!data.ok) {
                         this._onError(data.error || '{{ __("app.scan.correction_failed") }}');
                         return;

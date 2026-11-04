@@ -109,14 +109,8 @@ def _order_points(pts):
     return rect
 
 
-def _find_corner_markers(gray):
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    _, binary = cv2.threshold(blurred, 80, 255, cv2.THRESH_BINARY_INV)
+def _markers_from_binary(binary, w, h, min_area, max_area):
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    h, w = gray.shape
-    min_area = (w * h) * 0.00005
-    max_area = (w * h) * 0.005
 
     candidates = []
     for cnt in contours:
@@ -125,9 +119,9 @@ def _find_corner_markers(gray):
             continue
         x, y, bw, bh = cv2.boundingRect(cnt)
         aspect = bw / float(bh) if bh > 0 else 0
-        if 0.6 <= aspect <= 1.6:
+        if 0.55 <= aspect <= 1.8:
             solidity = area / (bw * bh) if bw * bh > 0 else 0
-            if solidity > 0.7:
+            if solidity > 0.65:
                 cx, cy = x + bw / 2.0, y + bh / 2.0
                 candidates.append((cx, cy, area))
 
@@ -154,6 +148,24 @@ def _find_corner_markers(gray):
     if len(markers) != 4:
         return None
     return _order_points(np.array(markers, dtype='float32'))
+
+
+def _find_corner_markers(gray):
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    h, w = gray.shape
+    min_area = (w * h) * 0.00003
+    max_area = (w * h) * 0.01
+
+    # Try several thresholds (Otsu + fixed levels) so varying phone-photo
+    # lighting still yields the four corner markers.
+    otsu_t, _ = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    for t in [int(otsu_t), 60, 90, 120, 150]:
+        _, binary = cv2.threshold(blurred, t, 255, cv2.THRESH_BINARY_INV)
+        markers = _markers_from_binary(binary, w, h, min_area, max_area)
+        if markers is not None:
+            return markers
+
+    return None
 
 
 def _align_sheet(image):
@@ -195,8 +207,11 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
     choice_labels = list('ABCDEF')[:choices_count]
     q_fills = {}
 
+    # Read the inner area of each bubble (avoid the printed outline ring),
+    # which gives a cleaner filled-vs-empty contrast on phone photos.
+    r = max(4, int(bubble_r_px * 0.80))
+
     for q_idx, bi, bx, by in positions:
-        r = bubble_r_px
         x1 = max(0, bx - r)
         y1 = max(0, by - r)
         x2 = min(thresh.shape[1], bx + r)
@@ -216,16 +231,19 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
 
     answers = {}
     for q_idx in sorted(q_fills.keys()):
-        fills = q_fills[q_idx]
-        best_choice = None
-        best_fill = 0
-        best_pos = None
+        # Relative detection: the darkest bubble wins if it is filled enough
+        # AND clearly darker than the runner-up. This tolerates varying photo
+        # brightness far better than a single absolute threshold.
+        ranked = sorted(q_fills[q_idx], key=lambda x: x[1], reverse=True)
+        top = ranked[0]
+        second_ratio = ranked[1][1] if len(ranked) > 1 else 0.0
 
-        for bi, ratio, fill, bx, by in fills:
-            if ratio > 0.35 and fill > best_fill:
-                best_fill = fill
-                best_choice = choice_labels[bi] if bi < len(choice_labels) else None
-                best_pos = (bx, by)
+        best_choice = None
+        best_pos = None
+        if top[1] >= 0.25 and (top[1] - second_ratio) >= 0.10:
+            bi = top[0]
+            best_choice = choice_labels[bi] if bi < len(choice_labels) else None
+            best_pos = (top[3], top[4])
 
         answers[q_idx] = (best_choice, best_pos)
 
@@ -326,10 +344,10 @@ def read_bubbles(image_path, question_count, choices_count=4):
 
 
 def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model_answer=None):
-    """Read bubbles and return answers + annotated overlay image."""
+    """Read bubbles and return (answers, overlay_image, debug)."""
     image = cv2.imread(image_path)
     if image is None:
-        return None, None
+        return None, None, {'has_markers': False, 'detected': 0}
 
     aligned, has_markers = _align_sheet(image)
     overlay = aligned.copy()
@@ -357,7 +375,7 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
         answers_dict = _read_contour_based(thresh, question_count, choices_count)
 
     if not answers_dict:
-        return [None] * question_count, None
+        return [None] * question_count, None, {'has_markers': has_markers, 'detected': 0}
 
     choice_labels = list('ABCDEF')[:choices_count]
     GREEN = (0, 200, 0)
@@ -399,4 +417,5 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
     _, buffer = cv2.imencode('.jpg', overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
     overlay_b64 = base64.b64encode(buffer).decode('utf-8')
 
-    return answers, overlay_b64
+    detected = sum(1 for a in answers if a is not None)
+    return answers, overlay_b64, {'has_markers': has_markers, 'detected': detected}

@@ -86,7 +86,7 @@ class ScanController extends Controller
         $percentage = $data['percentage'];
         $status = $percentage >= $exam->pass_mark ? 'pass' : 'fail';
 
-        $result = Result::create([
+        Result::create([
             'student_id' => $student->id,
             'exam_id' => $exam->id,
             'score' => $data['score'],
@@ -115,6 +115,7 @@ class ScanController extends Controller
                 'details' => $data['details'],
                 'overlay' => $data['overlay_image'] ?? null,
             ],
+            'debug' => $data['debug'] ?? null,
         ]);
     }
 

@@ -155,7 +155,7 @@ def correct_scan():
     try:
         qr_data = read_qr_code(temp_path)
 
-        answers, overlay_b64 = read_bubbles_with_overlay(
+        answers, overlay_b64, debug = read_bubbles_with_overlay(
             temp_path, question_count, choices_count, model_answer
         )
 
@@ -201,6 +201,7 @@ def correct_scan():
                 'percentage': round(percentage, 2),
                 'details': details,
                 'overlay_image': overlay_b64,
+                'debug': debug,
             }
         })
 
