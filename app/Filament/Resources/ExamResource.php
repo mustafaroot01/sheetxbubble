@@ -159,7 +159,7 @@ class ExamResource extends Resource
                                     $currentCount = count($current);
                                     if ($currentCount < $count) {
                                         for ($i = $currentCount; $i < $count; $i++) {
-                                            $current[] = ['answer' => null];
+                                            $current[] = null;
                                         }
                                     } elseif ($currentCount > $count) {
                                         $current = array_slice($current, 0, $count, true);
@@ -199,42 +199,27 @@ class ExamResource extends Resource
                             if (!is_array($state)) return;
                             $first = reset($state);
                             if (is_string($first)) {
-                                $component->state(array_map(fn ($v) => ['answer' => $v], array_values($state)));
+                                $component->state(array_values($state));
                             }
                         })
-                        ->dehydrateStateUsing(function ($state) {
-                            if (!is_array($state)) return $state;
-                            return array_values(array_map(fn ($item) => is_array($item) ? ($item['answer'] ?? null) : $item, $state));
-                        })
-                        ->schema([
+                        ->simple(
                             Forms\Components\Select::make('answer')
-                                ->label(__('app.exam.answer'))
                                 ->options(function (Get $get) {
                                     $count = (int) ($get('../../choices_count') ?: 4);
                                     $labels = array_slice(['A','B','C','D','E','F'], 0, $count);
                                     return array_combine($labels, $labels);
                                 })
                                 ->required()
-                                ->native(false),
-                        ])
+                                ->native(true)
+                        )
                         ->required()
                         ->minItems(1)
                         ->defaultItems(0)
                         ->maxItems(fn (Get $get) => (int) ($get('question_count') ?: 200))
                         ->addActionLabel(__('app.exam.add_answer'))
-                        ->itemLabel(function (array $state, $component): ?string {
-                            $items = $component->getState() ?? [];
-                            $keys = array_keys($items);
-                            $currentKey = array_search($state, $items);
-                            if ($currentKey === false) return null;
-                            $index = array_search($currentKey, $keys);
-                            $num = $index !== false ? $index + 1 : '?';
-                            $answer = $state['answer'] ?? '-';
-                            return __('app.correction.question_num') . " {$num}: {$answer}";
-                        })
-                        ->collapsible()
-                        ->grid(4)
-                        ->reorderable(false),
+                        ->grid(6)
+                        ->reorderable(false)
+                        ->deletable(false),
                 ]),
         ]);
     }
