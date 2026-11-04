@@ -1,8 +1,5 @@
 <x-filament-panels::page>
-    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto"
-         x-on:scan-result.window="handleScanResult($event.detail)"
-         x-on:scan-error.window="handleScanError($event.detail)"
-         x-on:scan-student-info.window="handleStudentInfo($event.detail)">
+    <div x-data="scanApp()" class="space-y-5 max-w-5xl mx-auto">
 
         {{-- Error Alert --}}
         <div x-show="errorMsg" x-cloak x-transition class="rounded-xl bg-danger-50 dark:bg-danger-500/10 p-4 flex items-center gap-3 ring-1 ring-danger-300 dark:ring-danger-500/20">
@@ -394,38 +391,21 @@
             toastTimer: null,
             currentStudent: null,
 
-            handleStudentInfo(detail) {
-                const info = Array.isArray(detail) ? detail[0] : detail;
-                if (info && info.student_name) {
-                    this.currentStudent = info;
+            _onResult(r) {
+                if (r && r.student_name) {
+                    this.lastResult = r;
+                    this.results.unshift(r);
+                    this.correctedCount = this.results.length;
+                    this._showResultToast();
                 }
             },
 
-            handleScanResult(detail) {
-                if (detail) {
-                    const r = Array.isArray(detail) ? detail[0] : detail;
-                    if (r && r.student_name) {
-                        this.lastResult = r;
-                        this.results.unshift(r);
-                        this.correctedCount = this.results.length;
-                        this._showResultToast();
-                    }
-                }
-                this.processing = false;
-                this.currentStudent = null;
-                this._resumeScanning();
-            },
-
-            handleScanError(detail) {
-                const msg = Array.isArray(detail) ? detail[0] : detail;
+            _onError(msg) {
                 if (msg) {
                     this.errorMsg = msg;
                     setTimeout(() => { if (this.errorMsg === msg) this.errorMsg = ''; }, 5000);
                 }
-                this.processing = false;
-                this.currentStudent = null;
                 this.lastProcessedQr = null;
-                this._resumeScanning();
             },
 
             _showResultToast() {
@@ -500,6 +480,8 @@
                 if (this.$refs.video) this.$refs.video.srcObject = null;
                 this.cameraOn = false;
                 this.qrFound = false;
+                this.processing = false;
+                this.currentStudent = null;
             },
 
             _startScanning() {
@@ -586,12 +568,26 @@
 
             async _autoCorrect(qrData, canvas) {
                 this.processing = true;
+                this.currentStudent = null;
+                const qrJson = JSON.stringify(qrData);
                 try {
                     const imageB64 = canvas.toDataURL('image/jpeg', 0.92);
-                    await this.$wire.processImageWithQr(imageB64, JSON.stringify(qrData));
+
+                    // Step 1: fast lookup so student info shows immediately
+                    const info = await this.$wire.lookupStudent(qrJson);
+                    if (!info || info.error) { this._onError(info ? info.error : '{{ __("app.scan.qr_not_found") }}'); return; }
+                    this.currentStudent = info;
+
+                    // Step 2: slow OMR correction
+                    const res = await this.$wire.processImageWithQr(imageB64, qrJson);
+                    if (!res || res.error) { this._onError(res ? res.error : '{{ __("app.scan.correction_failed") }}'); return; }
+                    this._onResult(res.result);
                 } catch (e) {
                     console.error('Auto-correct error:', e);
+                    this._onError('{{ __("app.scan.correction_failed") }}');
+                } finally {
                     this.processing = false;
+                    this.currentStudent = null;
                     this._resumeScanning();
                 }
             },

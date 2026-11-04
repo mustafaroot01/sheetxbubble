@@ -37,7 +37,53 @@ class ScanCorrect extends Page
     public ?string $overlayImage = null;
     public ?string $errorMessage = null;
 
-    public function processImageWithQr(string $imageData, string $qrJson): void
+    /**
+     * Fast validation + student lookup only (no bubble processing).
+     * Returns student/exam info so the UI can show it immediately,
+     * before the slow OMR correction runs in a second request.
+     */
+    public function lookupStudent(string $qrJson): array
+    {
+        $qrData = json_decode($qrJson, true);
+        if (!$qrData || !isset($qrData['exam_id'], $qrData['student_id'])) {
+            return ['error' => __('app.scan.qr_not_found')];
+        }
+
+        $exam = Exam::with(['subject', 'stage', 'studyType'])->find($qrData['exam_id']);
+        if (!$exam) {
+            return ['error' => __('app.scan.exam_not_found') . ' (ID: ' . $qrData['exam_id'] . ')'];
+        }
+
+        $user = auth()->user();
+        if ($user->hasRole('teacher') && $exam->teacher_id !== $user->id) {
+            return ['error' => __('app.scan.not_your_exam')];
+        }
+
+        if ($exam->status !== 'open') {
+            return ['error' => __('app.scan.exam_closed') . ' (' . $exam->subject->name . ')'];
+        }
+
+        $student = Student::where('student_id', $qrData['student_id'])->first();
+        if (!$student) {
+            return ['error' => __('app.scan.student_not_found', ['id' => $qrData['student_id']])];
+        }
+
+        $existing = Result::where('student_id', $student->id)
+            ->where('exam_id', $exam->id)
+            ->first();
+        if ($existing) {
+            return ['error' => __('app.scan.already_corrected', ['name' => $student->full_name])];
+        }
+
+        return [
+            'student_name' => $student->full_name,
+            'student_id' => $student->student_id,
+            'exam_name' => $exam->subject->name . ' - ' . $exam->stage->name,
+            'question_count' => $exam->question_count,
+        ];
+    }
+
+    public function processImageWithQr(string $imageData, string $qrJson): array
     {
         $this->scanResult = null;
         $this->showResult = false;
@@ -47,68 +93,48 @@ class ScanCorrect extends Page
         try {
             $qrData = json_decode($qrJson, true);
             if (!$qrData || !isset($qrData['exam_id'], $qrData['student_id'])) {
-                $this->setError(__('app.scan.qr_not_found'));
-                return;
+                return ['error' => __('app.scan.qr_not_found')];
             }
 
             $base64 = preg_replace('/^data:image\/\w+;base64,/', '', $imageData);
             $imageBytes = base64_decode($base64);
 
             if (!$imageBytes || strlen($imageBytes) < 1000) {
-                $this->setError(__('app.scan.invalid_image'));
-                return;
+                return ['error' => __('app.scan.invalid_image')];
             }
 
             $exam = Exam::with(['subject', 'stage', 'studyType'])->find($qrData['exam_id']);
             if (!$exam) {
-                $this->setError(__('app.scan.exam_not_found') . ' (ID: ' . $qrData['exam_id'] . ')');
-                return;
+                return ['error' => __('app.scan.exam_not_found') . ' (ID: ' . $qrData['exam_id'] . ')'];
             }
 
             $user = auth()->user();
             if ($user->hasRole('teacher') && $exam->teacher_id !== $user->id) {
-                $this->setError(__('app.scan.not_your_exam'));
-                return;
+                return ['error' => __('app.scan.not_your_exam')];
             }
 
             if ($exam->status !== 'open') {
-                $this->setError(__('app.scan.exam_closed') . ' (' . $exam->subject->name . ')');
-                return;
+                return ['error' => __('app.scan.exam_closed') . ' (' . $exam->subject->name . ')'];
             }
 
             $student = Student::where('student_id', $qrData['student_id'])->first();
             if (!$student) {
-                $this->setError(__('app.scan.student_not_found', ['id' => $qrData['student_id']]));
-                return;
+                return ['error' => __('app.scan.student_not_found', ['id' => $qrData['student_id']])];
             }
 
             $existing = Result::where('student_id', $student->id)
                 ->where('exam_id', $exam->id)
                 ->first();
             if ($existing) {
-                $this->setError(__('app.scan.already_corrected', ['name' => $student->full_name]));
-                return;
+                return ['error' => __('app.scan.already_corrected', ['name' => $student->full_name])];
             }
 
-            $this->dispatch('scan-student-info', [
-                'student_name' => $student->full_name,
-                'student_id' => $student->student_id,
-                'exam_name' => $exam->subject->name . ' - ' . $exam->stage->name,
-                'question_count' => $exam->question_count,
-            ]);
-
-            $this->correctAndSave($imageBytes, $exam, $student, true);
+            return $this->correctAndSave($imageBytes, $exam, $student);
 
         } catch (\Exception $e) {
             Log::error('ScanCorrect QR error: ' . $e->getMessage());
-            $this->setError($e->getMessage());
+            return ['error' => $e->getMessage()];
         }
-    }
-
-    private function setError(string $message): void
-    {
-        $this->errorMessage = $message;
-        $this->dispatch('scan-error', $message);
     }
 
     public function processImage(string $imageData): void
@@ -185,7 +211,16 @@ class ScanCorrect extends Page
                 return;
             }
 
-            $this->correctAndSave($imageBytes, $exam, $student);
+            $outcome = $this->correctAndSave($imageBytes, $exam, $student);
+
+            if (isset($outcome['error'])) {
+                $this->errorMessage = $outcome['error'];
+                return;
+            }
+
+            $this->scanResult = $outcome['result'];
+            $this->overlayImage = $outcome['overlay'];
+            $this->showResult = true;
 
         } catch (\Exception $e) {
             Log::error('ScanCorrect error: ' . $e->getMessage());
@@ -193,16 +228,9 @@ class ScanCorrect extends Page
         }
     }
 
-    private function correctAndSave(string $imageBytes, Exam $exam, Student $student, bool $fromCamera = false): void
+    private function correctAndSave(string $imageBytes, Exam $exam, Student $student): array
     {
         $pythonApiUrl = config('services.python_omr.url', 'http://127.0.0.1:5001');
-
-        $setErr = function (string $msg) use ($fromCamera) {
-            $this->errorMessage = $msg;
-            if ($fromCamera) {
-                $this->dispatch('scan-error', $msg);
-            }
-        };
 
         try {
             $response = Http::timeout(30)
@@ -214,20 +242,17 @@ class ScanCorrect extends Page
                     'total_mark' => $exam->total_mark,
                 ]);
         } catch (\Exception $e) {
-            $setErr(__('app.scan.correction_failed') . ' - ' . __('app.scan.service_unavailable'));
-            return;
+            return ['error' => __('app.scan.correction_failed') . ' - ' . __('app.scan.service_unavailable')];
         }
 
         if (!$response->successful()) {
-            $setErr($response->json('message', __('app.scan.correction_failed')));
-            return;
+            return ['error' => $response->json('message', __('app.scan.correction_failed'))];
         }
 
         $data = $response->json('data');
 
         if (!$data || !isset($data['correct_count'])) {
-            $setErr(__('app.scan.correction_failed'));
-            return;
+            return ['error' => __('app.scan.correction_failed')];
         }
 
         $correctCount = $data['correct_count'];
@@ -248,8 +273,6 @@ class ScanCorrect extends Page
             'answer_details' => $data['details'],
         ]);
 
-        $this->overlayImage = $data['overlay_image'] ?? null;
-
         $resultData = [
             'student_name' => $student->full_name,
             'student_id' => $student->student_id,
@@ -263,19 +286,13 @@ class ScanCorrect extends Page
             'details' => $data['details'],
         ];
 
-        $this->scanResult = $resultData;
-
-        if ($fromCamera) {
-            $this->dispatch('scan-result', $resultData);
-        } else {
-            $this->showResult = true;
-        }
-
         Notification::make()
             ->title(__('app.correction.success'))
             ->body($student->full_name . ': ' . $score . '/' . $exam->total_mark . ' (' . $percentage . '%)')
             ->success()
             ->send();
+
+        return ['result' => $resultData, 'overlay' => $data['overlay_image'] ?? null];
     }
 
     public function resetScan(): void
