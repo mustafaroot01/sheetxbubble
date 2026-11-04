@@ -40,7 +40,11 @@ echo "▶ Resetting OPcache (so updated PHP classes take effect)..."
 DOMAIN=$(grep -E '^APP_URL=' .env | sed -E 's#^APP_URL=https?://([^/"]+).*#\1#')
 case "$DOMAIN" in ''|localhost*|127.*) DOMAIN="diyala.org" ;; esac
 echo "<?php if (function_exists('opcache_reset')) opcache_reset(); echo 'OPCACHE_OK';" > public/_oc.php
-RESP=$(curl -sk --resolve "${DOMAIN}:443:127.0.0.1" "https://${DOMAIN}/_oc.php" 2>/dev/null)
+RESP=$(curl -sk --max-time 10 --resolve "${DOMAIN}:443:127.0.0.1" "https://${DOMAIN}/_oc.php" 2>/dev/null)
+if ! echo "$RESP" | grep -q OPCACHE_OK; then
+    # Fallback: hit the public URL directly (through Cloudflare) with a timeout
+    RESP=$(curl -sk --max-time 10 "https://${DOMAIN}/_oc.php" 2>/dev/null)
+fi
 rm -f public/_oc.php
 if echo "$RESP" | grep -q OPCACHE_OK; then
     echo "  OPcache reset OK"
