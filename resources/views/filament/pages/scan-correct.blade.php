@@ -608,6 +608,7 @@
                 this.currentStudent = null;
                 this._pendingQr = JSON.stringify(qrData);
                 this._pendingImg = canvas.toDataURL('image/jpeg', 0.92);
+                this._armWatchdog();
                 try {
                     this.$wire.lookupStudent(this._pendingQr);
                 } catch (e) {
@@ -615,6 +616,19 @@
                     this._onError('{{ __("app.scan.correction_failed") }}');
                     this._finishScan();
                 }
+            },
+
+            _armWatchdog() {
+                if (this._watchdog) clearTimeout(this._watchdog);
+                // If no scan-lookup/scan-final event arrives in time, recover
+                // instead of hanging forever on "correcting".
+                this._watchdog = setTimeout(() => {
+                    if (this.processing) {
+                        this.debugServer = 'server: TIMEOUT (no event received)';
+                        this._onError('{{ __("app.scan.correction_failed") }}');
+                        this._finishScan();
+                    }
+                }, 40000);
             },
 
             _eventPayload(detail) {
@@ -651,6 +665,7 @@
             },
 
             _finishScan() {
+                if (this._watchdog) { clearTimeout(this._watchdog); this._watchdog = null; }
                 this.processing = false;
                 this.currentStudent = null;
                 this._resumeScanning();
