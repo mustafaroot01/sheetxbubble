@@ -18,7 +18,10 @@ class CreateExam extends CreateRecord
         }
 
         if (isset($data['model_answer']) && is_array($data['model_answer'])) {
-            $data['model_answer'] = array_values(array_filter($data['model_answer'], fn ($v) => $v !== null && $v !== '' && $v !== '_clear'));
+            $data['model_answer'] = array_map(
+                fn ($v) => ($v === '_clear' || $v === '') ? null : $v,
+                $data['model_answer']
+            );
         }
 
         return $data;
