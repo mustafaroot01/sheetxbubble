@@ -196,43 +196,12 @@ class ExamResource extends Resource
 
                     $fields = [];
                     for ($i = 0; $i < $count; $i++) {
-                        $qNum = $i;
                         $fields[] = Forms\Components\Select::make("model_answer.{$i}")
                             ->label(__('app.exam.q_num', ['num' => $i + 1]))
                             ->options($options)
                             ->placeholder('-')
-                            ->native(true)
-                            ->suffixAction(
-                                Forms\Components\Actions\Action::make("delete_q{$i}")
-                                    ->icon('heroicon-m-x-mark')
-                                    ->color('danger')
-                                    ->tooltip(__('app.exam.clear_answer'))
-                                    ->size('xs')
-                                    ->action(function (Get $get, Set $set) use ($qNum) {
-                                        $count = (int) ($get('../../question_count') ?: 0);
-                                        if ($count <= 0) return;
-
-                                        $answers = [];
-                                        for ($j = 0; $j < $count; $j++) {
-                                            $answers[] = $get("../../model_answer.{$j}");
-                                        }
-
-                                        array_splice($answers, $qNum, 1);
-
-                                        foreach ($answers as $j => $val) {
-                                            $set("../../model_answer.{$j}", $val);
-                                        }
-                                        $set('../../model_answer.' . ($count - 1), null);
-
-                                        $newCount = $count - 1;
-                                        $set('../../question_count', $newCount);
-
-                                        $total = (float) ($get('../../total_mark') ?: 0);
-                                        if ($total > 0 && $newCount > 0) {
-                                            $set('../../mark_per_question', round($total / $newCount, 2));
-                                        }
-                                    })
-                            );
+                            ->searchable(false)
+                            ->clearable();
                     }
 
                     return [
