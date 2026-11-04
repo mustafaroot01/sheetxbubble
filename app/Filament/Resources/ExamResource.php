@@ -194,18 +194,33 @@ class ExamResource extends Resource
                         ];
                     }
 
-                    $optionsWithClear = ['_clear' => '✕ ' . __('app.exam.clear_answer')] + $options;
-
-                    $fields = [];
+                    $cells = [];
                     for ($i = 0; $i < $count; $i++) {
-                        $fields[] = Forms\Components\Select::make("model_answer.{$i}")
-                            ->label(__('app.exam.q_num', ['num' => $i + 1]))
-                            ->options($optionsWithClear)
-                            ->native(true);
+                        $path = "model_answer.{$i}";
+                        $cells[] = Forms\Components\Group::make([
+                            Forms\Components\Select::make($path)
+                                ->label(__('app.exam.q_num', ['num' => $i + 1]))
+                                ->options($options)
+                                ->placeholder('-')
+                                ->native(true),
+                            Forms\Components\Actions::make([
+                                Forms\Components\Actions\Action::make("clear_{$i}")
+                                    ->label(__('app.exam.clear_answer'))
+                                    ->icon('heroicon-m-x-mark')
+                                    ->color('danger')
+                                    ->size('xs')
+                                    ->link()
+                                    ->visible(fn (Get $get) => filled($get($path)))
+                                    ->action(fn (Set $set) => $set($path, null)),
+                            ])->fullWidth(),
+                        ])->extraAttributes([
+                            'class' => 'rounded-lg border border-gray-200 dark:border-gray-700 p-2',
+                        ]);
                     }
 
                     return [
-                        Forms\Components\Grid::make(6)->schema($fields),
+                        Forms\Components\Grid::make(['default' => 2, 'sm' => 3, 'md' => 4, 'lg' => 6])
+                            ->schema($cells),
                     ];
                 }),
         ]);
