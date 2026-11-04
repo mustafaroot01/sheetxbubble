@@ -45,7 +45,10 @@ class ScanCorrect extends Page
      */
     public function lookupStudent(string $qrJson): void
     {
-        $this->dispatch('scan-lookup', payload: $this->resolveLookup($qrJson));
+        $payload = json_encode($this->resolveLookup($qrJson), JSON_UNESCAPED_UNICODE);
+        // Livewire's own events don't reach the Alpine listener reliably in
+        // Filament pages, so fire a native browser event via $this->js().
+        $this->js('window.dispatchEvent(new CustomEvent("scan-lookup",{detail:{payload:' . $payload . '}}))');
     }
 
     private function resolveLookup(string $qrJson): array
@@ -91,7 +94,8 @@ class ScanCorrect extends Page
 
     public function processImageWithQr(string $imageData, string $qrJson): void
     {
-        $this->dispatch('scan-final', payload: $this->resolveCorrection($imageData, $qrJson));
+        $payload = json_encode($this->resolveCorrection($imageData, $qrJson), JSON_UNESCAPED_UNICODE);
+        $this->js('window.dispatchEvent(new CustomEvent("scan-final",{detail:{payload:' . $payload . '}}))');
     }
 
     private function resolveCorrection(string $imageData, string $qrJson): array
