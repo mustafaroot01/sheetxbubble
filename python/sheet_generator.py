@@ -361,28 +361,35 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
     c.setFillColor(hc(design['accent_color']))
     c.rect(cx, gt - COL_HDR_H, cw, COL_HDR_H, fill=1, stroke=0)
 
+    hdr_cy = gt - COL_HDR_H / 2  # vertical center of header row
+
+    # # badge in header — same style as row number badges
+    c.setFillColor(colors.HexColor('#ffffff'))
+    c.setFillAlpha(0.15)
+    c.circle(cx + NUM_W / 2, hdr_cy, 2.8 * mm, stroke=0, fill=1)
+    c.setFillAlpha(1)
     c.setFillColor(colors.white)
     c.setFont(EN_B, 8)
-    c.drawCentredString(cx + NUM_W / 2, gt - COL_HDR_H / 2 - 2.5, '#')
+    c.drawCentredString(cx + NUM_W / 2, hdr_cy - 2.5, '#')
 
     # Separator in header
     c.setStrokeColor(colors.white)
-    c.setStrokeAlpha(0.25)
-    c.setLineWidth(0.4)
-    c.line(cx + NUM_W, gt - COL_HDR_H + 1, cx + NUM_W, gt - 1)
+    c.setStrokeAlpha(0.3)
+    c.setLineWidth(0.5)
+    c.line(cx + NUM_W, gt - COL_HDR_H + 2, cx + NUM_W, gt - 2)
     c.setStrokeAlpha(1)
 
-    # Choice labels — each in a small circle outline
+    # Choice labels — small filled circles that fit within header height
+    lbl_r = min(2.5 * mm, COL_HDR_H / 2 - 0.8 * mm)
     for i, lbl in enumerate(labels):
         bx = bubbles_start + i * gap
-        c.setStrokeColor(colors.white)
         c.setFillColor(colors.white)
-        c.setStrokeAlpha(0.5)
-        c.circle(bx, gt - COL_HDR_H / 2, 3.5 * mm, stroke=1, fill=0)
-        c.setStrokeAlpha(1)
+        c.setFillAlpha(0.2)
+        c.circle(bx, hdr_cy, lbl_r, stroke=0, fill=1)
+        c.setFillAlpha(1)
+        c.setFillColor(colors.white)
         c.setFont(EN_B, 8)
-        c.setFillColor(colors.white)
-        c.drawCentredString(bx, gt - COL_HDR_H / 2 - 2.5, lbl)
+        c.drawCentredString(bx, hdr_cy - 2.5, lbl)
 
     # Rows
     drawn = 0
@@ -411,13 +418,15 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
         c.setLineWidth(0.2)
         c.line(cx + NUM_W, ry_bot, cx + NUM_W, ry_top)
 
-        # Question number — filled circle badge
+        # Question number — filled circle badge (header_bg_color for consistency)
         badge_r = 3.0 * mm
-        c.setFillColor(hc(design['accent_color']))
-        c.circle(cx + NUM_W / 2, cy, badge_r, stroke=0, fill=1)
+        c.setFillColor(hc(design['header_bg_color']))
+        c.setStrokeColor(hc(design['border_color']))
+        c.setLineWidth(0.3)
+        c.circle(cx + NUM_W / 2, cy, badge_r, stroke=1, fill=1)
         c.setFillColor(colors.white)
-        c.setFont(EN_B, 7 if qn < 10 else 6.5)
-        c.drawCentredString(cx + NUM_W / 2, cy - 2.2, str(qn))
+        c.setFont(EN_B, 7.5 if qn < 10 else 7)
+        c.drawCentredString(cx + NUM_W / 2, cy - 2.5, str(qn))
 
         chosen = answers[qn - 1] if answers and qn - 1 < len(answers) else None
 
@@ -437,9 +446,9 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
 
             if filled:
                 continue
-            c.setFillColor(colors.HexColor('#8888aa'))
-            c.setFont(EN, 5.5)
-            c.drawCentredString(bx, by - 1.8, lbl)
+            c.setFillColor(hc(design['border_color']))
+            c.setFont(EN_B, 6)
+            c.drawCentredString(bx, by - 2.0, lbl)
 
     # Grid border
     if drawn > 0:
