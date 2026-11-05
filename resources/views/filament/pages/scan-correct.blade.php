@@ -911,7 +911,7 @@
                 for(let y=y1;y<=y2;y++)for(let x=x1;x<=x2;x++){
                     if((x-cx)**2+(y-cy)**2>r2)continue;
                     const i=(y*w+x)*4;
-                    if((d[i]+d[i+1]+d[i+2])/3<110)dk++;
+                    if((d[i]+d[i+1]+d[i+2])/3<130)dk++;
                     tot++;
                 }
                 return tot>0?dk/tot:0;
@@ -926,17 +926,21 @@
                 const H=this._computeH(markers,this._TC.mkPts); if(!H)return;
                 const Hi=this._invH(H); if(!Hi)return;
 
-                // Bubble radius in camera pixels
-                const[tl,tr]=markers;
-                const rCam=this._TC.BUB_R*Math.hypot(tr[0]-tl[0],tr[1]-tl[1])
-                               /(this._TC.mkPts[1][0]-this._TC.mkPts[0][0]);
+                // Bubble radius in camera pixels (average of horizontal + vertical scale)
+                const[tl,tr,br,bl]=markers;
+                const camW=(Math.hypot(tr[0]-tl[0],tr[1]-tl[1])+Math.hypot(br[0]-bl[0],br[1]-bl[1]))/2;
+                const camH=(Math.hypot(bl[0]-tl[0],bl[1]-tl[1])+Math.hypot(br[0]-tr[0],br[1]-tr[1]))/2;
+                const tplW=this._TC.mkPts[1][0]-this._TC.mkPts[0][0];
+                const tplH=this._TC.mkPts[2][1]-this._TC.mkPts[1][1];
+                const scaleX=camW/tplW, scaleY=camH/tplH;
+                const rCam=this._TC.BUB_R*(scaleX+scaleY)/2;
 
                 const qFills={},qPts={};
                 for(const{q,bi,x,y}of this._rtTplPts){
                     const cp=this._apH(Hi,x,y); if(!cp)continue;
                     const[cx,cy]=cp;
                     if(cx<0||cx>=w||cy<0||cy>=h)continue;
-                    const fill=this._sampleDark(imgData.data,w,h,cx,cy,rCam*1.1);
+                    const fill=this._sampleDark(imgData.data,w,h,cx,cy,rCam*1.5);
                     if(!qFills[q]){qFills[q]=[];qPts[q]={};}
                     qFills[q].push({bi,fill});
                     qPts[q][bi]=[cx,cy];
@@ -969,26 +973,29 @@
                 const ctx=oc.getContext('2d');
                 ctx.clearRect(0,0,w,h);
                 const mdl=(this.examInfo||{}).model_answer||[];
-                const r=Math.max(12,w*0.012);
+                const r=Math.max(16,w*0.018);
                 for(const[qi,a]of Object.entries(ans)){
                     const[cx,cy]=a.camPt;
                     const ic=mdl[+qi]!=null?a.choice===mdl[+qi]:null;
                     const col=ic===true?'#22dd55':(ic===false?'#ff4444':'#ffcc00');
-                    // Draw all choice rings faintly
+                    // Draw all choice positions faintly (shows alignment)
                     for(const[bi2,[bx,by]]of Object.entries(a.allPts||{})){
                         ctx.beginPath();ctx.arc(bx,by,r,0,Math.PI*2);
-                        ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=1;ctx.stroke();
+                        ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.lineWidth=1.5;ctx.stroke();
                     }
-                    // Highlight detected choice
+                    // Highlight detected choice — filled circle
                     ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);
-                    ctx.fillStyle=col+'44';ctx.fill();
-                    ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
-                    ctx.fillStyle=col;ctx.font=`bold ${(r*0.9)|0}px sans-serif`;
+                    ctx.fillStyle=col+'55';ctx.fill();
+                    ctx.strokeStyle=col;ctx.lineWidth=3;ctx.stroke();
+                    ctx.fillStyle='#fff';ctx.font=`bold ${(r*1.0)|0}px sans-serif`;
                     ctx.textAlign='center';ctx.textBaseline='middle';
                     ctx.fillText(a.choice,cx,cy);
-                    // Question number
-                    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font=`${(r*0.6)|0}px sans-serif`;
-                    ctx.fillText(+qi+1,cx-r-4,cy);
+                    // Question number badge
+                    const qLabel=String(+qi+1);
+                    ctx.fillStyle='rgba(0,0,0,0.6)';
+                    ctx.beginPath();ctx.arc(cx-r-8,cy,r*0.55,0,Math.PI*2);ctx.fill();
+                    ctx.fillStyle='#fff';ctx.font=`bold ${(r*0.6)|0}px sans-serif`;
+                    ctx.fillText(qLabel,cx-r-8,cy);
                 }
             },
 
