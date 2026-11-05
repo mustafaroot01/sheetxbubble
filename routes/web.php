@@ -7,10 +7,14 @@ Route::get('/', function () {
     return redirect('/admin');
 });
 
-// Plain JSON endpoint for the camera scan page (bypasses Livewire).
+// Plain JSON endpoints for the camera scan page (bypass Livewire).
+// process = correct + preview (no save); save = persist after confirm.
 Route::post('/scan/process', [ScanController::class, 'process'])
     ->middleware('auth')
     ->name('scan.process');
+Route::post('/scan/save', [ScanController::class, 'save'])
+    ->middleware('auth')
+    ->name('scan.save');
 
 Route::get('/lang/{locale}', function (string $locale) {
     if (in_array($locale, ['ar', 'en'])) {

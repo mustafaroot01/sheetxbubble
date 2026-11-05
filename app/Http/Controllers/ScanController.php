@@ -7,8 +7,10 @@ use App\Models\Result;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ScanController extends Controller
 {
@@ -86,7 +88,10 @@ class ScanController extends Controller
         $percentage = $data['percentage'];
         $status = $percentage >= $exam->pass_mark ? 'pass' : 'fail';
 
-        Result::create([
+        // Do NOT save yet — return a preview for the user to verify, and cache
+        // the result under a token. It is persisted only when they confirm.
+        $token = (string) Str::uuid();
+        Cache::put('scan_pending_' . $token, [
             'student_id' => $student->id,
             'exam_id' => $exam->id,
             'score' => $data['score'],
@@ -96,10 +101,11 @@ class ScanController extends Controller
             'percentage' => $percentage,
             'status' => $status,
             'answer_details' => $data['details'],
-        ]);
+        ], now()->addMinutes(10));
 
         return response()->json([
             'ok' => true,
+            'token' => $token,
             'student' => [
                 'name' => $student->full_name,
                 'id' => $student->student_id,
@@ -117,6 +123,36 @@ class ScanController extends Controller
             ],
             'debug' => $data['debug'] ?? null,
         ]);
+    }
+
+    /**
+     * Persist a previewed correction after the user confirms it.
+     */
+    public function save(Request $request): JsonResponse
+    {
+        $token = (string) $request->input('token', '');
+        $pending = Cache::get('scan_pending_' . $token);
+        if (!$pending) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.correction_failed')]);
+        }
+
+        $user = $request->user();
+        $exam = Exam::find($pending['exam_id']);
+        if (!$exam || !$exam->isAccessibleBy($user)) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.not_your_exam')]);
+        }
+
+        $exists = Result::where('student_id', $pending['student_id'])
+            ->where('exam_id', $pending['exam_id'])->exists();
+        if ($exists) {
+            Cache::forget('scan_pending_' . $token);
+            return response()->json(['ok' => false, 'error' => __('app.scan.correction_failed')]);
+        }
+
+        Result::create($pending);
+        Cache::forget('scan_pending_' . $token);
+
+        return response()->json(['ok' => true]);
     }
 
     private function parseQr(string $raw): ?array

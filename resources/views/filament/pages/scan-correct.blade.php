@@ -27,15 +27,45 @@
                     <div class="text-white/60 text-xs font-semibold" x-text="resultPanel && (resultPanel.result.percentage + '% · ' + resultPanel.result.correct_count + ' / ' + resultPanel.result.wrong_count)"></div>
                 </div>
             </div>
-            <template x-if="resultPanel && resultPanel.overlay">
-                <div class="p-3">
-                    <img :src="'data:image/jpeg;base64,' + resultPanel.overlay" class="w-full rounded-lg" />
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
+                <template x-if="resultPanel && resultPanel.overlay">
+                    <div class="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                        <img :src="'data:image/jpeg;base64,' + resultPanel.overlay" class="w-full" />
+                    </div>
+                </template>
+                <div class="rounded-lg ring-1 ring-gray-100 dark:ring-gray-800 overflow-hidden">
+                    <div class="overflow-y-auto" style="max-height: 320px">
+                        <table class="w-full text-sm">
+                            <thead class="sticky top-0 bg-gray-50 dark:bg-gray-800/80">
+                                <tr>
+                                    <th class="py-2 px-3 text-start text-[10px] font-bold text-gray-400 uppercase">#</th>
+                                    <th class="py-2 px-3 text-start text-[10px] font-bold text-gray-400 uppercase">{{ __('app.correction.student_answer') }}</th>
+                                    <th class="py-2 px-3 text-start text-[10px] font-bold text-gray-400 uppercase">{{ __('app.correction.correct_answer') }}</th>
+                                    <th class="py-2 px-3 text-center text-[10px] font-bold text-gray-400 uppercase">{{ __('app.correction.result') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50 dark:divide-gray-800">
+                                <template x-for="d in (resultPanel ? resultPanel.result.details : [])" :key="d.q">
+                                    <tr :class="d.is_correct ? '' : 'bg-danger-50/40 dark:bg-danger-500/5'">
+                                        <td class="py-1.5 px-3 text-gray-500 text-xs font-mono font-bold" x-text="d.q"></td>
+                                        <td class="py-1.5 px-3"><span class="inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs font-bold" :class="d.is_correct ? 'bg-success-100 dark:bg-success-500/15 text-success-700 dark:text-success-400' : 'bg-danger-100 dark:bg-danger-500/15 text-danger-700 dark:text-danger-400'" x-text="d.student_answer || '-'"></span></td>
+                                        <td class="py-1.5 px-3"><span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-400 text-xs font-bold" x-text="d.correct_answer || '-'"></span></td>
+                                        <td class="py-1.5 px-3 text-center" x-html="d.is_correct ? '<span class=\'text-success-500\'>&#10003;</span>' : '<span class=\'text-danger-500\'>&#10007;</span>'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </template>
-            <div class="p-3 border-t border-gray-100 dark:border-gray-800 flex justify-center">
-                <button @click="closeResult()" class="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-primary-500 active:scale-[0.98] transition-all">
-                    <x-heroicon-s-camera class="w-5 h-5" />
+            </div>
+            <div class="p-3 border-t border-gray-100 dark:border-gray-800 flex justify-center gap-3">
+                <button @click="rescanResult()" :disabled="resultPanel && resultPanel.saving" class="inline-flex items-center gap-2 rounded-xl bg-gray-100 dark:bg-gray-800 px-5 py-2.5 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 transition-all">
+                    <x-heroicon-o-arrow-path class="w-5 h-5" />
                     {{ __('app.scan.scan_another') }}
+                </button>
+                <button @click="confirmResult()" :disabled="resultPanel && resultPanel.saving" class="inline-flex items-center gap-2 rounded-xl bg-success-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-success-500 active:scale-[0.98] disabled:opacity-50 transition-all">
+                    <x-heroicon-s-check-circle class="w-5 h-5" />
+                    <span x-text="(resultPanel && resultPanel.saving) ? '{{ __('app.loading') }}' : '{{ __('app.confirm') }}'"></span>
                 </button>
             </div>
         </div>
@@ -596,16 +626,64 @@
                         this.qrFound = true;
                         this._stopScanning();
                         this.lastProcessedQr = qrKey;
-
-                        c.width = v.videoWidth;
-                        c.height = v.videoHeight;
-                        ctx.drawImage(v, 0, 0);
-
-                        this._autoCorrect(parsed, c);
+                        // Hold: let the camera settle/focus, then grab the
+                        // sharpest full-res frame before correcting.
+                        this.processing = true;
+                        this.currentStudent = null;
+                        this.debugServer = 'server: hold steady...';
+                        this._captureBest(parsed);
                         return;
                     }
                 }
                 this.qrFound = false;
+            },
+
+            _frameSharpness(v) {
+                const sc = this._sharpCanvas || (this._sharpCanvas = document.createElement('canvas'));
+                const w = 240;
+                const h = Math.max(1, Math.round(240 * v.videoHeight / v.videoWidth));
+                sc.width = w; sc.height = h;
+                const ctx = sc.getContext('2d', { willReadFrequently: true });
+                ctx.drawImage(v, 0, 0, w, h);
+                const d = ctx.getImageData(0, 0, w, h).data;
+                let sum = 0;
+                for (let y = 0; y < h; y++) {
+                    for (let x = 1; x < w; x++) {
+                        const i = (y * w + x) * 4, j = (y * w + x - 1) * 4;
+                        const l1 = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+                        const l0 = d[j] * 0.3 + d[j + 1] * 0.59 + d[j + 2] * 0.11;
+                        const dd = l1 - l0;
+                        sum += dd * dd;
+                    }
+                }
+                return sum / (w * h);
+            },
+
+            async _captureBest(parsed) {
+                const v = this.$refs.video;
+                const big = this.$refs.scanCanvas;
+                // Let autofocus/exposure settle.
+                await new Promise(r => setTimeout(r, 450));
+                let bestURL = null, bestScore = -1;
+                for (let i = 0; i < 5; i++) {
+                    if (!v || v.videoWidth === 0) break;
+                    const s = this._frameSharpness(v);
+                    if (s > bestScore) {
+                        bestScore = s;
+                        big.width = v.videoWidth;
+                        big.height = v.videoHeight;
+                        big.getContext('2d', { willReadFrequently: true }).drawImage(v, 0, 0);
+                        bestURL = big.toDataURL('image/jpeg', 0.92);
+                    }
+                    await new Promise(r => setTimeout(r, 110));
+                }
+                if (!bestURL) {
+                    this._onError('{{ __("app.scan.invalid_image") }}');
+                    this._finishScan();
+                    return;
+                }
+                await this._sendScan(parsed, bestURL);
+                this._finishScan();
             },
 
             _parseQr(raw) {
@@ -665,24 +743,14 @@
                         this._onError(data.error || '{{ __("app.scan.correction_failed") }}');
                         return;
                     }
-                    this._onResult({
-                        student_name: data.student.name,
-                        student_id: data.student.id,
-                        exam_name: data.student.exam,
-                        score: data.result.score,
-                        total_mark: data.result.total_mark,
-                        correct_count: data.result.correct_count,
-                        wrong_count: data.result.wrong_count,
-                        percentage: data.result.percentage,
-                        status: data.result.status,
-                        details: data.result.details,
-                    });
-                    // Pause and show the annotated sheet so the reading can be
-                    // verified at a glance.
+                    // Pause and show the result for the user to verify. Nothing
+                    // is saved until they confirm.
                     this.resultPanel = {
+                        token: data.token,
                         student: data.student,
                         result: data.result,
                         overlay: data.result.overlay || null,
+                        saving: false,
                     };
                 } catch (e) {
                     this.debugServer = 'server: FETCH ERR ' + (e && e.message ? e.message : String(e));
@@ -697,9 +765,56 @@
                 if (!this.resultPanel) this._resumeScanning();
             },
 
-            closeResult() {
+            async confirmResult() {
+                if (!this.resultPanel || this.resultPanel.saving) return;
+                this.resultPanel.saving = true;
+                try {
+                    const resp = await fetch('{{ route("scan.save") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        },
+                        body: JSON.stringify({ token: this.resultPanel.token }),
+                    });
+                    const data = await resp.json();
+                    if (!data.ok) {
+                        this._onError(data.error || '{{ __("app.scan.correction_failed") }}');
+                        this.resultPanel.saving = false;
+                        return;
+                    }
+                    const r = this.resultPanel;
+                    this._onResult({
+                        student_name: r.student.name,
+                        student_id: r.student.id,
+                        exam_name: r.student.exam,
+                        score: r.result.score,
+                        total_mark: r.result.total_mark,
+                        correct_count: r.result.correct_count,
+                        wrong_count: r.result.wrong_count,
+                        percentage: r.result.percentage,
+                        status: r.result.status,
+                        details: r.result.details,
+                    });
+                } catch (e) {
+                    this._onError('{{ __("app.scan.service_unavailable") }}');
+                    this.resultPanel.saving = false;
+                    return;
+                }
                 this.resultPanel = null;
                 if (this.cameraOn) this._resumeScanning();
+            },
+
+            rescanResult() {
+                // Discard the preview and allow the same sheet to be scanned again.
+                this.resultPanel = null;
+                this.lastProcessedQr = null;
+                if (this.cameraOn) this._resumeScanning();
+            },
+
+            closeResult() {
+                this.rescanResult();
             },
 
             handleFile(e) { const f = e.target.files[0]; if (f) this._preview(f); },
