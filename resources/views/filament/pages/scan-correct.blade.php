@@ -187,10 +187,11 @@
                     </div>
                 </div>
 
-                {{-- Debug readout (helps diagnose QR detection) --}}
+                {{-- Debug readout (helps diagnose QR + OMR detection) --}}
                 <div x-show="cameraOn" x-cloak class="px-4 py-1.5 bg-gray-900 text-gray-300 text-[11px] font-mono border-b border-gray-800 space-y-0.5">
                     <div class="truncate" x-text="'QR: ' + (debugRaw || '—')"></div>
                     <div class="truncate text-amber-400" x-text="debugServer || 'server: —'"></div>
+                    <div x-show="debugFills" class="truncate text-cyan-400 text-[10px]" x-text="debugFills"></div>
                 </div>
 
                 {{-- Camera View --}}
@@ -457,6 +458,7 @@
             currentStudent: null,
             debugRaw: '',
             debugServer: '',
+            debugFills: '',
             detectorKind: '',
             resultPanel: null,
 
@@ -736,6 +738,13 @@
                     if (data.ok) {
                         const dbg = data.debug || {};
                         this.debugServer = 'server: OK detected=' + (dbg.detected ?? '?') + ' markers=' + (dbg.has_markers ? 'yes' : 'NO');
+                        // Show fill ratios for each question to help diagnose accuracy
+                        if (dbg.fills) {
+                            const f = dbg.fills;
+                            this.debugFills = 'fills: ' + Object.keys(f).map(q =>
+                                'Q' + (parseInt(q)+1) + ':' + f[q].top_fill + '(+' + f[q].gap + ')=' + (f[q].choice||'?')
+                            ).join(' ');
+                        }
                     } else {
                         this.debugServer = 'server: err=' + data.error;
                     }

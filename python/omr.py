@@ -230,24 +230,33 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
         q_fills[q_idx].append((bi, fill_ratio, fill, bx, by))
 
     answers = {}
+    fill_debug = {}
+
     for q_idx in sorted(q_fills.keys()):
-        # Relative detection: the darkest bubble wins if it is sufficiently
-        # filled AND clearly darker than the runner-up. Lowered thresholds
-        # (0.15 / 0.05) handle phone photos where fill ratios are smaller.
+        # Relative detection: pick the bubble with the highest fill ratio
+        # as long as it clearly stands out from the runner-up.
+        # Using only the gap requirement (no absolute minimum) so even
+        # lightly-filled phone-photo bubbles are caught.
         ranked = sorted(q_fills[q_idx], key=lambda x: x[1], reverse=True)
         top = ranked[0]
         second_ratio = ranked[1][1] if len(ranked) > 1 else 0.0
 
         best_choice = None
         best_pos = None
-        if top[1] >= 0.15 and (top[1] - second_ratio) >= 0.05:
+        gap = top[1] - second_ratio
+        if gap >= 0.04:
             bi = top[0]
             best_choice = choice_labels[bi] if bi < len(choice_labels) else None
             best_pos = (top[3], top[4])
 
         answers[q_idx] = (best_choice, best_pos)
+        fill_debug[q_idx] = {
+            'top_fill': round(top[1], 3),
+            'gap': round(gap, 3),
+            'choice': best_choice,
+        }
 
-    return answers
+    return answers, fill_debug
 
 
 # ─── Fallback: contour-based reading (for sheets without markers) ───
@@ -348,7 +357,7 @@ def read_bubbles(image_path, question_count, choices_count=4):
         img_h, img_w = aligned.shape[:2]
         positions = _compute_bubble_positions(img_w, img_h, question_count, choices_count)
         bubble_r_px = int(BUBBLE_R * (img_w / A4_W))
-        answers_dict = _read_at_positions(thresh, positions, choices_count, bubble_r_px)
+        answers_dict, _ = _read_at_positions(thresh, positions, choices_count, bubble_r_px)
 
     if not answers_dict:
         answers_dict = _read_contour_based(thresh, question_count, choices_count)
@@ -372,12 +381,13 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
 
     answers_dict = None
     bubble_positions = None
+    fill_debug = {}
 
     if has_markers:
         img_h, img_w = aligned.shape[:2]
         positions = _compute_bubble_positions(img_w, img_h, question_count, choices_count)
         bubble_r_px = int(BUBBLE_R * (img_w / A4_W))
-        answers_dict = _read_at_positions(thresh, positions, choices_count, bubble_r_px)
+        answers_dict, fill_debug = _read_at_positions(thresh, positions, choices_count, bubble_r_px)
         # Build lookup: (q_idx, choice_idx) -> (px_x, px_y)
         bubble_positions = {}
         for q_idx, bi, bx, by in positions:
@@ -430,4 +440,8 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
     overlay_b64 = base64.b64encode(buffer).decode('utf-8')
 
     detected = sum(1 for a in answers if a is not None)
-    return answers, overlay_b64, {'has_markers': has_markers, 'detected': detected}
+    return answers, overlay_b64, {
+        'has_markers': has_markers,
+        'detected': detected,
+        'fills': fill_debug,
+    }
