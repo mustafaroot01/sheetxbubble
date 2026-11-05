@@ -233,21 +233,21 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
     fill_debug = {}
 
     for q_idx in sorted(q_fills.keys()):
-        # Relative detection: pick the bubble with the highest fill ratio
-        # as long as it clearly stands out from the runner-up.
-        # Using only the gap requirement (no absolute minimum) so even
-        # lightly-filled phone-photo bubbles are caught.
         ranked = sorted(q_fills[q_idx], key=lambda x: x[1], reverse=True)
         top = ranked[0]
         second_ratio = ranked[1][1] if len(ranked) > 1 else 0.0
-
-        best_choice = None
-        best_pos = None
         gap = top[1] - second_ratio
-        if gap >= 0.04:
-            bi = top[0]
+
+        # Always pick the highest-fill bubble (best-effort).
+        # We only abstain if the top bubble has essentially zero fill
+        # (the question was left blank — all choices look the same).
+        bi = top[0]
+        if top[1] >= 0.02:
             best_choice = choice_labels[bi] if bi < len(choice_labels) else None
             best_pos = (top[3], top[4])
+        else:
+            best_choice = None
+            best_pos = None
 
         answers[q_idx] = (best_choice, best_pos)
         fill_debug[q_idx] = {
