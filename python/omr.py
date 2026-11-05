@@ -207,9 +207,9 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
     choice_labels = list('ABCDEF')[:choices_count]
     q_fills = {}
 
-    # Read the inner area of each bubble (avoid the printed outline ring),
-    # which gives a cleaner filled-vs-empty contrast on phone photos.
-    r = max(4, int(bubble_r_px * 0.80))
+    # Read 90% of bubble radius — wide enough to capture a lightly-filled
+    # bubble but still avoids the printed outline ring.
+    r = max(5, int(bubble_r_px * 0.90))
 
     for q_idx, bi, bx, by in positions:
         x1 = max(0, bx - r)
@@ -231,16 +231,16 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
 
     answers = {}
     for q_idx in sorted(q_fills.keys()):
-        # Relative detection: the darkest bubble wins if it is filled enough
-        # AND clearly darker than the runner-up. This tolerates varying photo
-        # brightness far better than a single absolute threshold.
+        # Relative detection: the darkest bubble wins if it is sufficiently
+        # filled AND clearly darker than the runner-up. Lowered thresholds
+        # (0.15 / 0.05) handle phone photos where fill ratios are smaller.
         ranked = sorted(q_fills[q_idx], key=lambda x: x[1], reverse=True)
         top = ranked[0]
         second_ratio = ranked[1][1] if len(ranked) > 1 else 0.0
 
         best_choice = None
         best_pos = None
-        if top[1] >= 0.25 and (top[1] - second_ratio) >= 0.10:
+        if top[1] >= 0.15 and (top[1] - second_ratio) >= 0.05:
             bi = top[0]
             best_choice = choice_labels[bi] if bi < len(choice_labels) else None
             best_pos = (top[3], top[4])
@@ -314,6 +314,26 @@ def _group_into_rows(bubbles, question_count):
 
 # ─── Public API ──────────────────────────────────────────────────────
 
+def _best_thresh(gray):
+    """Return the binary threshold that best separates filled bubbles.
+
+    Tries adaptive threshold (good for uneven lighting) and Otsu
+    (good for uniform backgrounds) and returns both so callers can
+    pick or combine them.
+    """
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
+    adaptive = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 15, 4
+    )
+    _, otsu = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    # Combine: a pixel is "filled" if either method says so — maximises recall
+    combined = cv2.bitwise_or(adaptive, otsu)
+    return combined
+
+
 def read_bubbles(image_path, question_count, choices_count=4):
     image = cv2.imread(image_path)
     if image is None:
@@ -321,11 +341,7 @@ def read_bubbles(image_path, question_count, choices_count=4):
 
     aligned, has_markers = _align_sheet(image)
     gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 11, 2
-    )
+    thresh = _best_thresh(gray)
 
     answers_dict = None
     if has_markers:
@@ -352,11 +368,7 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
     aligned, has_markers = _align_sheet(image)
     overlay = aligned.copy()
     gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 11, 2
-    )
+    thresh = _best_thresh(gray)
 
     answers_dict = None
     bubble_positions = None
