@@ -718,8 +718,9 @@
             // return values / events inside a Filament page.
             async _sendScan(qrData, canvas) {
                 this.debugServer = 'server: sending...';
-                const imageB64 = canvas.toDataURL('image/jpeg', 0.85);
                 try {
+                // canvas may be a HTMLCanvasElement or already a data-URL string
+                const imageB64 = (typeof canvas === 'string') ? canvas : canvas.toDataURL('image/jpeg', 0.85);
                     const resp = await fetch('{{ route("scan.process") }}', {
                         method: 'POST',
                         headers: {
