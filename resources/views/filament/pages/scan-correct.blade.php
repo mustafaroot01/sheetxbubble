@@ -806,12 +806,15 @@
                 const INST_H=6*MM,FOOTER_H=4*MM;
                 const INFO_ROW_H=6.5*MM,QR_SZ=2.6*CM,TITLE_H=1.0*CM;
                 const MK_SZ=4*MM,MK_OFF=1.5*MM;
-                // Marker centers in PDF-image space (top-left origin, pt units)
+                // Marker centers in IMAGE space (top-left origin, pt units = same as bubble positions)
+                // PDF y → image y: img_y = A4H - pdf_y
                 const mk_cx=MX+MK_OFF+MK_SZ/2, mk_rx=A4W-MX-MK_OFF-MK_SZ/2;
-                const mk_ty=MT+MK_OFF+MK_SZ/2, mk_by=A4H-MB-MK_OFF-MK_SZ/2;
+                const mk_top=MB+MK_OFF+MK_SZ/2;          // near top of image (small y)
+                const mk_bot=A4H-MT-MK_OFF-MK_SZ/2;      // near bottom of image (large y)
+                // Order: TL, TR, BR, BL — matches _findMarkers region order
                 this._TC={A4W,A4H,MX,MT,MB,UW,ROW_H,BUB_R,BUB_GAP,NUM_W,COL_GAP,
                           COL_HDR_H,INST_H,FOOTER_H,INFO_ROW_H,QR_SZ,TITLE_H,MK_SZ,MK_OFF,MM,
-                          mkPts:[[mk_cx,mk_ty],[mk_rx,mk_ty],[mk_rx,mk_by],[mk_cx,mk_by]]};
+                          mkPts:[[mk_cx,mk_top],[mk_rx,mk_top],[mk_rx,mk_bot],[mk_cx,mk_bot]]};
             },
             _hdrH(nf=6){
                 const{TITLE_H,INFO_ROW_H,MM,QR_SZ}=this._TC;
@@ -850,17 +853,18 @@
 
             // ── 4-corner marker detection ─────────────────────────────
             _findMarkers(d,w,h){
-                const f=0.18;
+                const f=0.25; // 25% region for each corner
                 const regs=[[0,0,w*f,h*f],[w*(1-f),0,w,h*f],[w*(1-f),h*(1-f),w,h],[0,h*(1-f),w*f,h]];
                 const out=[];
                 for(const[x1,y1,x2,y2]of regs){
                     let sx=0,sy=0,cnt=0;
-                    for(let y=y1|0;y<(y2+0.5)|0;y++)
-                        for(let x=x1|0;x<(x2+0.5)|0;x++){
+                    for(let y=y1|0;y<(y2+0.5)|0;y+=2) // step 2 for speed
+                        for(let x=x1|0;x<(x2+0.5)|0;x+=2){
                             const i=(y*w+x)*4;
-                            if((d[i]+d[i+1]+d[i+2])/3<70){sx+=x;sy+=y;cnt++;}
+                            if((d[i]+d[i+1]+d[i+2])/3<85){sx+=x;sy+=y;cnt++;}
                         }
-                    if(cnt<(x2-x1)*(y2-y1)*0.001)return null;
+                    const area=(x2-x1)*(y2-y1)/4; // /4 because step=2
+                    if(cnt<area*0.0008)return null;
                     out.push([sx/cnt,sy/cnt]);
                 }
                 return out; // [TL,TR,BR,BL]
@@ -950,7 +954,8 @@
                 for(const[q,fills]of Object.entries(qFills)){
                     fills.sort((a,b)=>b.fill-a.fill);
                     const top=fills[0],sec=fills[1]||{fill:0};
-                    if(top.fill>=0.03){
+                    // Must have clear margin over second-best (avoids noise picks)
+                    if(top.fill>=0.04 && top.fill>sec.fill*1.4){
                         ans[+q]={choice:labels[top.bi],bi:top.bi,
                                  fill:top.fill,gap:top.fill-sec.fill,
                                  camPt:qPts[+q][top.bi],allPts:qPts[+q]};
@@ -964,15 +969,23 @@
                 this.rtAnswers=ans;
                 if(this.rtStable>=5&&!this.rtReady)this.rtReady=true;
 
-                this._rtDrawOverlay(w,h,ans);
+                this._rtDrawOverlay(w,h,ans,markers);
             },
 
-            _rtDrawOverlay(w,h,ans){
+            _rtDrawOverlay(w,h,ans,markers){
                 const oc=this.$refs.overlayCanvas; if(!oc)return;
                 if(oc.width!==w||oc.height!==h){oc.width=w;oc.height=h;}
                 const ctx=oc.getContext('2d');
                 ctx.clearRect(0,0,w,h);
                 const mdl=(this.examInfo||{}).model_answer||[];
+                // Draw corner markers as yellow dots (shows if alignment is correct)
+                if(markers){
+                    for(const[mx,my]of markers){
+                        ctx.beginPath();ctx.arc(mx,my,8,0,Math.PI*2);
+                        ctx.fillStyle='#ffff00';ctx.fill();
+                        ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
+                    }
+                }
                 const r=Math.max(16,w*0.018);
                 for(const[qi,a]of Object.entries(ans)){
                     const[cx,cy]=a.camPt;
