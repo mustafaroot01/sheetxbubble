@@ -181,8 +181,8 @@ def _align_sheet(image):
     mk_cy_bot = MB + MARKER_OFFSET + MARKER_SIZE / 2
     mk_rx = A4_W - MX - MARKER_OFFSET - MARKER_SIZE / 2
 
-    # Target size: scale A4 to reasonable pixel dimensions
-    target_w = 1200
+    # Target size: scale A4 to reasonable pixel dimensions (900px wide = faster processing)
+    target_w = 900
     target_h = int(target_w * A4_H / A4_W)
     sx = target_w / A4_W
     sy = target_h / A4_H
@@ -207,27 +207,37 @@ def _read_at_positions(thresh, positions, choices_count, bubble_r_px):
     choice_labels = list('ABCDEF')[:choices_count]
     q_fills = {}
 
-    # Read 90% of bubble radius — wide enough to capture a lightly-filled
-    # bubble but still avoids the printed outline ring.
-    r = max(5, int(bubble_r_px * 0.90))
+    # Sample radius: 110% of bubble radius captures lightly-filled bubbles
+    # while still avoiding adjacent bubbles (gap = ~54px, r ≈ 16px → safe).
+    r = max(5, int(bubble_r_px * 1.10))
+    # Local search radius: snap each position to the darkest nearby spot
+    # within ±snap_r pixels. Handles small scale/alignment errors.
+    snap_r = max(3, int(bubble_r_px * 0.5))
 
     for q_idx, bi, bx, by in positions:
-        x1 = max(0, bx - r)
-        y1 = max(0, by - r)
-        x2 = min(thresh.shape[1], bx + r)
-        y2 = min(thresh.shape[0], by + r)
+        # Find the sub-region centre with the highest fill in a small window
+        best_fill = -1.0
+        best_cx, best_cy = bx, by
+        for dy in range(-snap_r, snap_r + 1, 3):
+            for dx in range(-snap_r, snap_r + 1, 3):
+                cx2, cy2 = bx + dx, by + dy
+                x1 = max(0, cx2 - r)
+                y1 = max(0, cy2 - r)
+                x2 = min(thresh.shape[1], cx2 + r)
+                y2 = min(thresh.shape[0], cy2 + r)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                roi = thresh[y1:y2, x1:x2]
+                total = roi.shape[0] * roi.shape[1]
+                f = cv2.countNonZero(roi) / total if total > 0 else 0
+                if f > best_fill:
+                    best_fill = f
+                    best_cx, best_cy = cx2, cy2
 
-        if x2 <= x1 or y2 <= y1:
-            continue
-
-        roi = thresh[y1:y2, x1:x2]
-        total = roi.shape[0] * roi.shape[1]
-        fill = cv2.countNonZero(roi)
-        fill_ratio = fill / total if total > 0 else 0
-
+        fill_ratio = best_fill
         if q_idx not in q_fills:
             q_fills[q_idx] = []
-        q_fills[q_idx].append((bi, fill_ratio, fill, bx, by))
+        q_fills[q_idx].append((bi, fill_ratio, fill_ratio, best_cx, best_cy))
 
     answers = {}
     fill_debug = {}
@@ -402,9 +412,17 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
     choice_labels = list('ABCDEF')[:choices_count]
     GREEN = (0, 200, 0)
     RED = (0, 0, 220)
-    THICKNESS = 3
+    GRAY = (160, 160, 160)
+    YELLOW = (0, 200, 220)
+    THICKNESS = 2
     img_h, img_w = overlay.shape[:2]
-    r_draw = max(int(BUBBLE_R * (img_w / A4_W)), 8)
+    r_draw = max(int(BUBBLE_R * (img_w / A4_W)), 6)
+
+    # Draw ALL bubble positions as gray circles first — lets you see
+    # immediately if the template grid is aligned with the actual bubbles.
+    if bubble_positions:
+        for (q_idx, bi), (bx, by) in bubble_positions.items():
+            cv2.circle(overlay, (bx, by), r_draw, GRAY, 1)
 
     answers = []
     for q_idx in range(question_count):
@@ -418,16 +436,16 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
             cv2.circle(overlay, (cx, cy), r_draw + 4, color, THICKNESS)
 
             if is_correct:
-                p1 = (cx - 8, cy + 2)
-                p2 = (cx - 2, cy + 8)
-                p3 = (cx + 10, cy - 6)
+                p1 = (cx - 7, cy + 2)
+                p2 = (cx - 2, cy + 7)
+                p3 = (cx + 8, cy - 5)
                 cv2.line(overlay, p1, p2, GREEN, 2)
                 cv2.line(overlay, p2, p3, GREEN, 2)
             else:
-                cv2.line(overlay, (cx - 7, cy - 7), (cx + 7, cy + 7), RED, 2)
-                cv2.line(overlay, (cx + 7, cy - 7), (cx - 7, cy + 7), RED, 2)
+                cv2.line(overlay, (cx - 6, cy - 6), (cx + 6, cy + 6), RED, 2)
+                cv2.line(overlay, (cx + 6, cy - 6), (cx - 6, cy + 6), RED, 2)
 
-                # Show correct answer position in green
+                # Highlight the correct answer position in green
                 if q_idx < len(model_answer) and model_answer[q_idx] in choice_labels:
                     correct_bi = choice_labels.index(model_answer[q_idx])
                     cpos = None
@@ -435,6 +453,9 @@ def read_bubbles_with_overlay(image_path, question_count, choices_count=4, model
                         cpos = bubble_positions[(q_idx, correct_bi)]
                     if cpos:
                         cv2.circle(overlay, cpos, r_draw + 4, GREEN, 2)
+        elif best_pos:
+            # No model answer — just show detected choice in yellow
+            cv2.circle(overlay, best_pos, r_draw + 3, YELLOW, 2)
 
     _, buffer = cv2.imencode('.jpg', overlay, [cv2.IMWRITE_JPEG_QUALITY, 85])
     overlay_b64 = base64.b64encode(buffer).decode('utf-8')

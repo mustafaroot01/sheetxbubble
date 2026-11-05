@@ -664,10 +664,10 @@
             async _captureBest(parsed) {
                 const v = this.$refs.video;
                 const big = this.$refs.scanCanvas;
-                // Let autofocus/exposure settle.
-                await new Promise(r => setTimeout(r, 450));
+                // Brief settle (autofocus), then pick the sharpest of 3 frames.
+                await new Promise(r => setTimeout(r, 150));
                 let bestURL = null, bestScore = -1;
-                for (let i = 0; i < 5; i++) {
+                for (let i = 0; i < 3; i++) {
                     if (!v || v.videoWidth === 0) break;
                     const s = this._frameSharpness(v);
                     if (s > bestScore) {
@@ -677,7 +677,7 @@
                         big.getContext('2d', { willReadFrequently: true }).drawImage(v, 0, 0);
                         bestURL = big.toDataURL('image/jpeg', 0.92);
                     }
-                    await new Promise(r => setTimeout(r, 110));
+                    if (i < 2) await new Promise(r => setTimeout(r, 80));
                 }
                 if (!bestURL) {
                     this._onError('{{ __("app.scan.invalid_image") }}');
