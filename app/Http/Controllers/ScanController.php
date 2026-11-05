@@ -126,6 +126,152 @@ class ScanController extends Controller
     }
 
     /**
+     * Lightweight endpoint: validate QR and return exam metadata for
+     * the client-side real-time OMR. No image processing required.
+     */
+    public function examInfo(Request $request): JsonResponse
+    {
+        $qr = (string) $request->input('qr', '');
+        $qrData = $this->parseQr($qr);
+        if (!$qrData) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.qr_not_found')]);
+        }
+
+        $exam = Exam::with(['subject', 'stage'])->find($qrData['exam_id']);
+        if (!$exam) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.exam_not_found') . ' (ID: ' . $qrData['exam_id'] . ')']);
+        }
+
+        $user = $request->user();
+        if (!$exam->isAccessibleBy($user)) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.not_your_exam')]);
+        }
+
+        if ($exam->status !== 'open') {
+            return response()->json(['ok' => false, 'error' => __('app.scan.exam_closed')]);
+        }
+
+        $student = Student::where('student_id', $qrData['student_id'])->first();
+        if (!$student) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.student_not_found', ['id' => $qrData['student_id']])]);
+        }
+
+        $existing = Result::where('student_id', $student->id)->where('exam_id', $exam->id)->first();
+        if ($existing) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.already_corrected', ['name' => $student->full_name])]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'question_count' => $exam->question_count,
+            'choices_count'  => $exam->choices_count ?? 4,
+            'model_answer'   => $exam->model_answer ?? [],
+            'total_mark'     => $exam->total_mark,
+            'pass_mark'      => $exam->pass_mark,
+            'student' => [
+                'name' => $student->full_name,
+                'id'   => $student->student_id,
+                'exam' => $exam->subject->name . ' - ' . $exam->stage->name,
+            ],
+        ]);
+    }
+
+    /**
+     * Save a correction whose answers were detected client-side (real-time OMR).
+     * No image is uploaded; the client sends the detected answer array directly.
+     */
+    public function saveRealtime(Request $request): JsonResponse
+    {
+        $qr      = (string) $request->input('qr', '');
+        $answers = (array)  $request->input('answers', []);
+
+        $qrData = $this->parseQr($qr);
+        if (!$qrData) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.qr_not_found')]);
+        }
+
+        $exam = Exam::with(['subject', 'stage'])->find($qrData['exam_id']);
+        if (!$exam) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.exam_not_found')]);
+        }
+
+        $user = $request->user();
+        if (!$exam->isAccessibleBy($user)) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.not_your_exam')]);
+        }
+
+        if ($exam->status !== 'open') {
+            return response()->json(['ok' => false, 'error' => __('app.scan.exam_closed')]);
+        }
+
+        $student = Student::where('student_id', $qrData['student_id'])->first();
+        if (!$student) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.student_not_found', ['id' => $qrData['student_id']])]);
+        }
+
+        $existing = Result::where('student_id', $student->id)->where('exam_id', $exam->id)->first();
+        if ($existing) {
+            return response()->json(['ok' => false, 'error' => __('app.scan.already_corrected', ['name' => $student->full_name])]);
+        }
+
+        $modelAnswer   = $exam->model_answer ?? [];
+        $questionCount = $exam->question_count;
+        $markPerQ      = $questionCount > 0 ? $exam->total_mark / $questionCount : 0;
+        $correctCount  = 0;
+        $details       = [];
+
+        for ($i = 0; $i < $questionCount; $i++) {
+            $studentAns = $answers[$i] ?? null;
+            $correctAns = $modelAnswer[$i] ?? null;
+            $isCorrect  = $studentAns !== null && $studentAns === $correctAns;
+            if ($isCorrect) $correctCount++;
+            $details[] = [
+                'q'              => $i + 1,
+                'student_answer' => $studentAns,
+                'correct_answer' => $correctAns,
+                'is_correct'     => $isCorrect,
+                'mark'           => $markPerQ,
+                'earned'         => $isCorrect ? $markPerQ : 0,
+            ];
+        }
+
+        $wrongCount = $questionCount - $correctCount;
+        $score      = round($correctCount * $markPerQ, 2);
+        $percentage = $exam->total_mark > 0 ? round($score / $exam->total_mark * 100, 1) : 0;
+        $status     = $percentage >= $exam->pass_mark ? 'pass' : 'fail';
+
+        Result::create([
+            'student_id'     => $student->id,
+            'exam_id'        => $exam->id,
+            'score'          => $score,
+            'total_mark'     => $exam->total_mark,
+            'correct_count'  => $correctCount,
+            'wrong_count'    => $wrongCount,
+            'percentage'     => $percentage,
+            'status'         => $status,
+            'answer_details' => $details,
+        ]);
+
+        return response()->json([
+            'ok'      => true,
+            'student' => [
+                'name' => $student->full_name,
+                'id'   => $student->student_id,
+                'exam' => $exam->subject->name . ' - ' . $exam->stage->name,
+            ],
+            'result' => [
+                'score'         => $score,
+                'total_mark'    => $exam->total_mark,
+                'correct_count' => $correctCount,
+                'wrong_count'   => $wrongCount,
+                'percentage'    => $percentage,
+                'status'        => $status,
+                'details'       => $details,
+            ],
+        ]);
+    }
+
+    /**
      * Persist a previewed correction after the user confirms it.
      */
     public function save(Request $request): JsonResponse

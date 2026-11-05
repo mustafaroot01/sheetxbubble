@@ -198,6 +198,8 @@
                 <div class="relative bg-gray-950" style="aspect-ratio:3/4; max-height:82vh; min-height:60vh">
                     <video x-ref="video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-contain"></video>
                     <canvas x-ref="scanCanvas" class="hidden"></canvas>
+                    {{-- Live OMR overlay drawn by real-time JS detection --}}
+                    <canvas x-ref="overlayCanvas" class="absolute inset-0 w-full h-full object-contain pointer-events-none" style="z-index:3"></canvas>
 
                     {{-- Idle State --}}
                     <div x-show="!cameraOn && !processing" class="absolute inset-0 flex flex-col items-center justify-center text-gray-500">
@@ -244,11 +246,20 @@
 
                         {{-- Status Badge --}}
                         <div class="absolute bottom-4 left-1/2 -translate-x-1/2">
-                            <div class="px-4 py-2 rounded-full backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition-all duration-300"
-                                 :class="qrFound ? 'bg-green-500/90 text-white' : 'bg-black/50 text-white/80'">
-                                <span class="w-2 h-2 rounded-full animate-pulse" :class="qrFound ? 'bg-white' : 'bg-red-400'"></span>
-                                <span x-text="qrFound ? '{{ __("app.scan.qr_found") }}' : '{{ __("app.scan.searching_qr") }}'"></span>
-                            </div>
+                            <template x-if="rtActive && rtReady">
+                                <button @click="_previewRealtime()"
+                                        class="px-5 py-2.5 rounded-full bg-success-500/95 text-white text-sm font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>
+                                    {{ __('app.confirm') }}
+                                </button>
+                            </template>
+                            <template x-if="!(rtActive && rtReady)">
+                                <div class="px-4 py-2 rounded-full backdrop-blur-md text-xs font-semibold flex items-center gap-2 transition-all duration-300"
+                                     :class="rtActive ? 'bg-primary-500/90 text-white' : (qrFound ? 'bg-green-500/90 text-white' : 'bg-black/50 text-white/80')">
+                                    <span class="w-2 h-2 rounded-full animate-pulse" :class="rtActive ? 'bg-white' : (qrFound ? 'bg-white' : 'bg-red-400')"></span>
+                                    <span x-text="rtActive ? ('{{ __("app.scan.qr_found") }}' + ' · ' + Object.keys(rtAnswers||{}).length + '/{{ "" }}' + (examInfo ? examInfo.question_count : '?')) : (qrFound ? '{{ __("app.scan.qr_found") }}' : '{{ __("app.scan.searching_qr") }}')"></span>
+                                </div>
+                            </template>
                         </div>
                     </div>
 
@@ -462,6 +473,17 @@
             detectorKind: '',
             resultPanel: null,
 
+            // ── Real-time OMR state ──────────────────────────────────
+            rtActive: false,       // in real-time scan mode
+            examInfo: null,        // exam metadata from server
+            rtAnswers: {},         // current frame detected answers
+            rtStable: 0,           // consecutive stable frames
+            rtPrevKey: '',         // stringified previous answers
+            rtReady: false,        // stable enough to confirm
+            rtParsed: null,        // parsed QR for this student
+            _TC: null,             // template constants (lazy init)
+            _rtTplPts: null,       // bubble positions in template space
+
             _onResult(r) {
                 if (r && r.student_name) {
                     this.lastResult = r;
@@ -613,6 +635,13 @@
 
                 this.scanCount++;
 
+                // ── Real-time OMR mode ───────────────────────────────
+                if (this.rtActive) {
+                    const imgData = ctx.getImageData(0, 0, w, h);
+                    this._rtFrame(imgData, w, h);
+                    return;
+                }
+
                 const raw = await this._detectQr(c, w, h, ctx);
 
                 if (raw) {
@@ -626,14 +655,10 @@
                         }
 
                         this.qrFound = true;
-                        this._stopScanning();
                         this.lastProcessedQr = qrKey;
-                        // Hold: let the camera settle/focus, then grab the
-                        // sharpest full-res frame before correcting.
-                        this.processing = true;
-                        this.currentStudent = null;
-                        this.debugServer = 'server: hold steady...';
-                        this._captureBest(parsed);
+                        // Start real-time OMR: fetch exam metadata then read
+                        // bubbles live from each camera frame — no image upload.
+                        this._fetchExamInfo(parsed);
                         return;
                     }
                 }
@@ -768,6 +793,258 @@
                 }
             },
 
+            // ═══════════════════════════════════════════════════════════
+            // REAL-TIME OMR — client-side bubble detection from camera
+            // ═══════════════════════════════════════════════════════════
+
+            // ── Template constants (match sheet_generator.py + omr.py) ─
+            _initTC() {
+                const MM=2.83465,CM=28.3465,A4W=595,A4H=842;
+                const MX=0.8*CM,MT=0.6*CM,MB=0.6*CM,UW=A4W-2*MX;
+                const ROW_H=6.8*MM,BUB_R=2.6*MM,BUB_GAP=9.5*MM;
+                const NUM_W=8*MM,COL_GAP=5*MM,COL_HDR_H=5.5*MM;
+                const INST_H=6*MM,FOOTER_H=4*MM;
+                const INFO_ROW_H=6.5*MM,QR_SZ=2.6*CM,TITLE_H=1.0*CM;
+                const MK_SZ=4*MM,MK_OFF=1.5*MM;
+                // Marker centers in PDF-image space (top-left origin, pt units)
+                const mk_cx=MX+MK_OFF+MK_SZ/2, mk_rx=A4W-MX-MK_OFF-MK_SZ/2;
+                const mk_ty=MT+MK_OFF+MK_SZ/2, mk_by=A4H-MB-MK_OFF-MK_SZ/2;
+                this._TC={A4W,A4H,MX,MT,MB,UW,ROW_H,BUB_R,BUB_GAP,NUM_W,COL_GAP,
+                          COL_HDR_H,INST_H,FOOTER_H,INFO_ROW_H,QR_SZ,TITLE_H,MK_SZ,MK_OFF,MM,
+                          mkPts:[[mk_cx,mk_ty],[mk_rx,mk_ty],[mk_rx,mk_by],[mk_cx,mk_by]]};
+            },
+            _hdrH(nf=6){
+                const{TITLE_H,INFO_ROW_H,MM,QR_SZ}=this._TC;
+                return Math.max(TITLE_H+Math.ceil(nf/3)*INFO_ROW_H+1*MM,QR_SZ+6*MM);
+            },
+            _gridRowsFirst(){
+                const{A4H,MT,MB,COL_HDR_H,INST_H,FOOTER_H,ROW_H,MM}=this._TC;
+                const top=A4H-MT-this._hdrH()-1*MM-(INST_H+0.5*MM)-COL_HDR_H;
+                return Math.max(1,Math.floor((top-(MB+FOOTER_H+1*MM))/ROW_H));
+            },
+            _computeTemplatePts(qCount,cCount){
+                if(!this._TC)this._initTC();
+                const{A4W,A4H,UW,MX,COL_GAP,ROW_H,BUB_R,BUB_GAP,NUM_W,COL_HDR_H,INST_H,MT,MM}=this._TC;
+                const rpp=this._gridRowsFirst();
+                const ncols=qCount<2?1:(qCount>rpp*2?3:2);
+                const colW=(UW-(ncols-1)*COL_GAP)/ncols;
+                let gap=BUB_GAP;
+                if(cCount>1)gap=Math.min(BUB_GAP,(colW-NUM_W-2*BUB_R-3*MM)/(cCount-1));
+                const btw=(cCount-1)*gap;
+                const gtPdf=A4H-MT-this._hdrH()-1*MM-(INST_H+0.5*MM);
+                const pts=[];
+                const qpc=Math.ceil(qCount/ncols);
+                for(let ci=0;ci<ncols;ci++){
+                    const cxP=MX+ci*(colW+COL_GAP);
+                    const bsP=cxP+NUM_W+(colW-NUM_W-btw)/2;
+                    for(let row=0;row<qpc;row++){
+                        const qi=ci*qpc+row; if(qi>=qCount)break;
+                        const cyP=(gtPdf-COL_HDR_H-row*ROW_H)-ROW_H/2;
+                        const yI=A4H-cyP; // PDF→image y
+                        for(let bi=0;bi<cCount;bi++)
+                            pts.push({q:qi,bi,x:bsP+bi*gap,y:yI});
+                    }
+                }
+                return pts;
+            },
+
+            // ── 4-corner marker detection ─────────────────────────────
+            _findMarkers(d,w,h){
+                const f=0.18;
+                const regs=[[0,0,w*f,h*f],[w*(1-f),0,w,h*f],[w*(1-f),h*(1-f),w,h],[0,h*(1-f),w*f,h]];
+                const out=[];
+                for(const[x1,y1,x2,y2]of regs){
+                    let sx=0,sy=0,cnt=0;
+                    for(let y=y1|0;y<(y2+0.5)|0;y++)
+                        for(let x=x1|0;x<(x2+0.5)|0;x++){
+                            const i=(y*w+x)*4;
+                            if((d[i]+d[i+1]+d[i+2])/3<70){sx+=x;sy+=y;cnt++;}
+                        }
+                    if(cnt<(x2-x1)*(y2-y1)*0.001)return null;
+                    out.push([sx/cnt,sy/cnt]);
+                }
+                return out; // [TL,TR,BR,BL]
+            },
+
+            // ── Homography (DLT) ──────────────────────────────────────
+            _ge(A,b){
+                const n=8,aug=A.map((r,i)=>[...r,b[i]]);
+                for(let c=0;c<n;c++){
+                    let mr=c;
+                    for(let r=c+1;r<n;r++)if(Math.abs(aug[r][c])>Math.abs(aug[mr][c]))mr=r;
+                    [aug[c],aug[mr]]=[aug[mr],aug[c]];
+                    const pv=aug[c][c]; if(Math.abs(pv)<1e-10)return null;
+                    for(let r=c+1;r<n;r++){const f=aug[r][c]/pv;for(let j=c;j<=n;j++)aug[r][j]-=f*aug[c][j];}
+                }
+                const x=new Array(n);
+                for(let i=n-1;i>=0;i--){x[i]=aug[i][n]/aug[i][i];for(let j=i-1;j>=0;j--)aug[j][n]-=aug[j][i]*x[i];}
+                return x;
+            },
+            _computeH(sp,dp){
+                const A=[],b=[];
+                for(let i=0;i<4;i++){
+                    const[sx,sy]=sp[i],[dx,dy]=dp[i];
+                    A.push([sx,sy,1,0,0,0,-dx*sx,-dx*sy]);A.push([0,0,0,sx,sy,1,-dy*sx,-dy*sy]);
+                    b.push(dx,dy);
+                }
+                const h=this._ge(A,b); if(!h)return null;
+                return[h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7],1];
+            },
+            _invH(H){
+                const[a,b,c,d,e,f,g,h,k]=H;
+                const det=a*(e*k-f*h)-b*(d*k-f*g)+c*(d*h-e*g);
+                if(Math.abs(det)<1e-10)return null;
+                return[(e*k-f*h)/det,(c*h-b*k)/det,(b*f-c*e)/det,
+                       (f*g-d*k)/det,(a*k-c*g)/det,(c*d-a*f)/det,
+                       (d*h-e*g)/det,(b*g-a*h)/det,(a*e-b*d)/det];
+            },
+            _apH(H,x,y){
+                const dv=H[6]*x+H[7]*y+H[8]; if(Math.abs(dv)<1e-10)return null;
+                return[(H[0]*x+H[1]*y+H[2])/dv,(H[3]*x+H[4]*y+H[5])/dv];
+            },
+
+            // ── Pixel darkness sampling ───────────────────────────────
+            _sampleDark(d,w,h,cx,cy,r){
+                let dk=0,tot=0; const r2=r*r;
+                const x1=Math.max(0,cx-r|0),y1=Math.max(0,cy-r|0);
+                const x2=Math.min(w-1,(cx+r+1)|0),y2=Math.min(h-1,(cy+r+1)|0);
+                for(let y=y1;y<=y2;y++)for(let x=x1;x<=x2;x++){
+                    if((x-cx)**2+(y-cy)**2>r2)continue;
+                    const i=(y*w+x)*4;
+                    if((d[i]+d[i+1]+d[i+2])/3<110)dk++;
+                    tot++;
+                }
+                return tot>0?dk/tot:0;
+            },
+
+            // ── Main real-time processing per frame ───────────────────
+            _rtFrame(imgData,w,h){
+                if(!this._TC)this._initTC();
+                const markers=this._findMarkers(imgData.data,w,h);
+                if(!markers){this._rtClearOverlay();return;}
+
+                const H=this._computeH(markers,this._TC.mkPts); if(!H)return;
+                const Hi=this._invH(H); if(!Hi)return;
+
+                // Bubble radius in camera pixels
+                const[tl,tr]=markers;
+                const rCam=this._TC.BUB_R*Math.hypot(tr[0]-tl[0],tr[1]-tl[1])
+                               /(this._TC.mkPts[1][0]-this._TC.mkPts[0][0]);
+
+                const qFills={},qPts={};
+                for(const{q,bi,x,y}of this._rtTplPts){
+                    const cp=this._apH(Hi,x,y); if(!cp)continue;
+                    const[cx,cy]=cp;
+                    if(cx<0||cx>=w||cy<0||cy>=h)continue;
+                    const fill=this._sampleDark(imgData.data,w,h,cx,cy,rCam*1.1);
+                    if(!qFills[q]){qFills[q]=[];qPts[q]={};}
+                    qFills[q].push({bi,fill});
+                    qPts[q][bi]=[cx,cy];
+                }
+
+                const ans={},labels='ABCDEF';
+                for(const[q,fills]of Object.entries(qFills)){
+                    fills.sort((a,b)=>b.fill-a.fill);
+                    const top=fills[0],sec=fills[1]||{fill:0};
+                    if(top.fill>=0.03){
+                        ans[+q]={choice:labels[top.bi],bi:top.bi,
+                                 fill:top.fill,gap:top.fill-sec.fill,
+                                 camPt:qPts[+q][top.bi],allPts:qPts[+q]};
+                    }
+                }
+
+                // Stability check (5 identical frames → ready to confirm)
+                const key=JSON.stringify(Object.values(ans).map(a=>a.choice));
+                if(key===this.rtPrevKey){this.rtStable++;}
+                else{this.rtStable=1;this.rtPrevKey=key;}
+                this.rtAnswers=ans;
+                if(this.rtStable>=5&&!this.rtReady)this.rtReady=true;
+
+                this._rtDrawOverlay(w,h,ans);
+            },
+
+            _rtDrawOverlay(w,h,ans){
+                const oc=this.$refs.overlayCanvas; if(!oc)return;
+                if(oc.width!==w||oc.height!==h){oc.width=w;oc.height=h;}
+                const ctx=oc.getContext('2d');
+                ctx.clearRect(0,0,w,h);
+                const mdl=(this.examInfo||{}).model_answer||[];
+                const r=Math.max(12,w*0.012);
+                for(const[qi,a]of Object.entries(ans)){
+                    const[cx,cy]=a.camPt;
+                    const ic=mdl[+qi]!=null?a.choice===mdl[+qi]:null;
+                    const col=ic===true?'#22dd55':(ic===false?'#ff4444':'#ffcc00');
+                    // Draw all choice rings faintly
+                    for(const[bi2,[bx,by]]of Object.entries(a.allPts||{})){
+                        ctx.beginPath();ctx.arc(bx,by,r,0,Math.PI*2);
+                        ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=1;ctx.stroke();
+                    }
+                    // Highlight detected choice
+                    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);
+                    ctx.fillStyle=col+'44';ctx.fill();
+                    ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.stroke();
+                    ctx.fillStyle=col;ctx.font=`bold ${(r*0.9)|0}px sans-serif`;
+                    ctx.textAlign='center';ctx.textBaseline='middle';
+                    ctx.fillText(a.choice,cx,cy);
+                    // Question number
+                    ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font=`${(r*0.6)|0}px sans-serif`;
+                    ctx.fillText(+qi+1,cx-r-4,cy);
+                }
+            },
+
+            _rtClearOverlay(){
+                const oc=this.$refs.overlayCanvas;
+                if(oc){const ctx=oc.getContext('2d');ctx.clearRect(0,0,oc.width,oc.height);}
+            },
+
+            // ── Fetch exam metadata and enter real-time mode ──────────
+            async _fetchExamInfo(parsed){
+                this.debugServer='rt: loading exam...';
+                try{
+                    const url='{{ route("scan.exam-info") }}?qr='+encodeURIComponent(JSON.stringify(parsed));
+                    const resp=await fetch(url,{headers:{'Accept':'application/json','X-CSRF-TOKEN':'{{ csrf_token() }}'}});
+                    const data=await resp.json();
+                    if(!data.ok){this._onError(data.error);this.lastProcessedQr=null;return;}
+                    this.examInfo=data;
+                    this.rtParsed=parsed;
+                    if(!this._TC)this._initTC();
+                    this._rtTplPts=this._computeTemplatePts(data.question_count,data.choices_count);
+                    this.rtActive=true;
+                    this.rtStable=0;this.rtReady=false;this.rtAnswers={};this.rtPrevKey='';
+                    this.debugServer='rt: Q='+data.question_count+' C='+data.choices_count;
+                }catch(e){
+                    this._onError('{{ __("app.scan.service_unavailable") }}');
+                    this.lastProcessedQr=null;
+                }
+            },
+
+            // ── Preview result from real-time answers (before saving) ─
+            _previewRealtime(){
+                if(!this.rtAnswers||!this.examInfo)return;
+                const qn=this.examInfo.question_count,mpq=this.examInfo.total_mark/qn;
+                const mdl=this.examInfo.model_answer||[];
+                const answers=Array.from({length:qn},(_,i)=>this.rtAnswers[i]?.choice??null);
+                let cc=0;
+                const details=answers.map((ans,i)=>{
+                    const ca=mdl[i]??null,ok=ans!==null&&ans===ca;
+                    if(ok)cc++;
+                    return{q:i+1,student_answer:ans,correct_answer:ca,is_correct:ok,mark:mpq,earned:ok?mpq:0};
+                });
+                const wc=qn-cc,sc=Math.round(cc*mpq*100)/100;
+                const pct=this.examInfo.total_mark>0?Math.round(sc/this.examInfo.total_mark*1000)/10:0;
+                const st=pct>=(this.examInfo.pass_mark||50)?'pass':'fail';
+                this.rtActive=false;
+                this._stopScanning();
+                this._rtClearOverlay();
+                this.resultPanel={
+                    token:null,rtAnswers:answers,rtParsed:this.rtParsed,
+                    student:this.examInfo.student,
+                    result:{score:sc,total_mark:this.examInfo.total_mark,correct_count:cc,
+                            wrong_count:wc,percentage:pct,status:st,details,overlay:null},
+                    overlay:null,saving:false
+                };
+            },
+
             _finishScan() {
                 this.processing = false;
                 this.currentStudent = null;
@@ -778,6 +1055,53 @@
             async confirmResult() {
                 if (!this.resultPanel || this.resultPanel.saving) return;
                 this.resultPanel.saving = true;
+
+                // Real-time path: answers came from client-side OMR
+                if (this.resultPanel.rtAnswers !== undefined) {
+                    try {
+                        const resp = await fetch('{{ route("scan.save-realtime") }}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            },
+                            body: JSON.stringify({
+                                qr: JSON.stringify(this.resultPanel.rtParsed),
+                                answers: this.resultPanel.rtAnswers,
+                            }),
+                        });
+                        const data = await resp.json();
+                        if (!data.ok) {
+                            this._onError(data.error || '{{ __("app.scan.correction_failed") }}');
+                            this.resultPanel.saving = false;
+                            return;
+                        }
+                        const r = this.resultPanel;
+                        this._onResult({
+                            student_name: r.student.name,
+                            student_id: r.student.id,
+                            exam_name: r.student.exam,
+                            score: r.result.score,
+                            total_mark: r.result.total_mark,
+                            correct_count: r.result.correct_count,
+                            wrong_count: r.result.wrong_count,
+                            percentage: r.result.percentage,
+                            status: r.result.status,
+                            details: r.result.details,
+                        });
+                    } catch (e) {
+                        this._onError('{{ __("app.scan.service_unavailable") }}');
+                        this.resultPanel.saving = false;
+                        return;
+                    }
+                    this.resultPanel = null;
+                    this.examInfo = null;
+                    if (this.cameraOn) this._resumeScanning();
+                    return;
+                }
+
+                // Server-side OMR path: use cached token
                 try {
                     const resp = await fetch('{{ route("scan.save") }}', {
                         method: 'POST',
@@ -818,8 +1142,17 @@
 
             rescanResult() {
                 // Discard the preview and allow the same sheet to be scanned again.
+                // Also clean up real-time mode state.
                 this.resultPanel = null;
                 this.lastProcessedQr = null;
+                this.rtActive = false;
+                this.rtReady = false;
+                this.rtAnswers = {};
+                this.rtStable = 0;
+                this.rtPrevKey = '';
+                this.rtParsed = null;
+                this.examInfo = null;
+                this._rtClearOverlay();
                 if (this.cameraOn) this._resumeScanning();
             },
 

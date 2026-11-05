@@ -15,6 +15,12 @@ Route::post('/scan/process', [ScanController::class, 'process'])
 Route::post('/scan/save', [ScanController::class, 'save'])
     ->middleware('auth')
     ->name('scan.save');
+Route::get('/scan/exam-info', [ScanController::class, 'examInfo'])
+    ->middleware('auth')
+    ->name('scan.exam-info');
+Route::post('/scan/save-realtime', [ScanController::class, 'saveRealtime'])
+    ->middleware('auth')
+    ->name('scan.save-realtime');
 
 Route::get('/lang/{locale}', function (string $locale) {
     if (in_array($locale, ['ar', 'en'])) {
