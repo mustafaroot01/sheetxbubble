@@ -801,8 +801,8 @@
             _initTC() {
                 const MM=2.83465,CM=28.3465,A4W=595,A4H=842;
                 const MX=0.8*CM,MT=0.6*CM,MB=0.6*CM,UW=A4W-2*MX;
-                const ROW_H=6.8*MM,BUB_R=2.6*MM,BUB_GAP=9.5*MM;
-                const NUM_W=8*MM,COL_GAP=5*MM,COL_HDR_H=5.5*MM;
+                const ROW_H=7.5*MM,BUB_R=3.2*MM,BUB_GAP=10.5*MM;
+                const NUM_W=9*MM,COL_GAP=5*MM,COL_HDR_H=6.0*MM;
                 const INST_H=6*MM,FOOTER_H=4*MM;
                 const INFO_ROW_H=6.5*MM,QR_SZ=2.6*CM,TITLE_H=1.0*CM;
                 const MK_SZ=4*MM,MK_OFF=1.5*MM;

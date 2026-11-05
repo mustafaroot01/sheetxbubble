@@ -146,7 +146,7 @@ class ExamResource extends Resource
                             ->required()
                             ->numeric()
                             ->minValue(1)
-                            ->maxValue(200)
+                            ->maxValue(60)
                             ->live(onBlur: true)
                             ->afterStateUpdated(function (Get $get, Set $set) {
                                 $total = $get('total_mark');

@@ -69,13 +69,14 @@ MT = 0.6 * cm
 MB = 0.6 * cm
 UW = W - 2 * MX
 
-# Compact bubble spacing - like real OMR sheets
-ROW_H = 6.8 * mm
-BUBBLE_R = 2.6 * mm
-BUBBLE_GAP = 9.5 * mm  # fixed gap between bubble centers
-NUM_W = 8 * mm
+# Bubble layout — max 60 questions per sheet (2 cols × 30 rows)
+MAX_QUESTIONS = 60
+ROW_H = 7.5 * mm
+BUBBLE_R = 3.2 * mm
+BUBBLE_GAP = 10.5 * mm  # fixed gap between bubble centers
+NUM_W = 9 * mm
 COL_GAP = 5 * mm
-COL_HDR_H = 5.5 * mm
+COL_HDR_H = 6.0 * mm
 INST_H = 6 * mm
 FOOTER_H = 4 * mm
 CONT_HDR_H = 18 * mm
@@ -133,7 +134,7 @@ def generate_sheets_pdf(data):
     study_type = data.get('study_type', '')
     study_type_id = data.get('study_type_id', '')
     exam_date = data.get('exam_date', '')
-    question_count = data.get('question_count', 20)
+    question_count = min(int(data.get('question_count', 20)), MAX_QUESTIONS)
     choices_count = data.get('choices_count', 4)
 
     design = dict(DEFAULT_DESIGN)
@@ -361,7 +362,7 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
     c.rect(cx, gt - COL_HDR_H, cw, COL_HDR_H, fill=1, stroke=0)
 
     c.setFillColor(colors.white)
-    c.setFont(EN_B, 7)
+    c.setFont(EN_B, 8)
     c.drawCentredString(cx + NUM_W / 2, gt - COL_HDR_H / 2 - 2, '#')
 
     # Separator in header
@@ -372,7 +373,7 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
     c.setStrokeAlpha(1)
 
     # Choice labels
-    c.setFont(EN_B, 7)
+    c.setFont(EN_B, 8)
     for i, lbl in enumerate(labels):
         bx = bubbles_start + i * gap
         c.setFillColor(colors.white)
@@ -407,8 +408,8 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
 
         # Question number
         c.setFillColor(hc(design['header_bg_color']))
-        c.setFont(EN_B, 7)
-        c.drawCentredString(cx + NUM_W / 2, cy - 2, str(qn))
+        c.setFont(EN_B, 8)
+        c.drawCentredString(cx + NUM_W / 2, cy - 2.5, str(qn))
 
         chosen = answers[qn - 1] if answers and qn - 1 < len(answers) else None
 
@@ -429,8 +430,8 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
             if filled:
                 continue
             c.setFillColor(colors.HexColor('#8888aa'))
-            c.setFont(EN, 4.5)
-            c.drawCentredString(bx, by - 1.5, lbl)
+            c.setFont(EN, 5.5)
+            c.drawCentredString(bx, by - 1.8, lbl)
 
     # Grid border
     if drawn > 0:

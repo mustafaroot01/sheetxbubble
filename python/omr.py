@@ -16,12 +16,12 @@ MT = 0.6 * CM
 MB = 0.6 * CM
 UW = A4_W - 2 * MX
 
-ROW_H = 6.8 * MM
-BUBBLE_R = 2.6 * MM
-BUBBLE_GAP = 9.5 * MM
-NUM_W = 8 * MM
+ROW_H = 7.5 * MM
+BUBBLE_R = 3.2 * MM
+BUBBLE_GAP = 10.5 * MM
+NUM_W = 9 * MM
 COL_GAP = 5 * MM
-COL_HDR_H = 5.5 * MM
+COL_HDR_H = 6.0 * MM
 INST_H = 6 * MM
 FOOTER_H = 4 * MM
 CONT_HDR_H = 18 * MM
