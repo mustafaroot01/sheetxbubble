@@ -71,12 +71,12 @@ UW = W - 2 * MX
 
 # Bubble layout — max 60 questions per sheet (2 cols × 30 rows)
 MAX_QUESTIONS = 60
-ROW_H = 7.5 * mm
-BUBBLE_R = 3.2 * mm
-BUBBLE_GAP = 10.5 * mm  # fixed gap between bubble centers
-NUM_W = 9 * mm
+ROW_H = 7.8 * mm
+BUBBLE_R = 3.5 * mm
+BUBBLE_GAP = 11.0 * mm  # fixed gap between bubble centers
+NUM_W = 10 * mm
 COL_GAP = 5 * mm
-COL_HDR_H = 6.0 * mm
+COL_HDR_H = 6.5 * mm
 INST_H = 6 * mm
 FOOTER_H = 4 * mm
 CONT_HDR_H = 18 * mm
@@ -363,21 +363,26 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
 
     c.setFillColor(colors.white)
     c.setFont(EN_B, 8)
-    c.drawCentredString(cx + NUM_W / 2, gt - COL_HDR_H / 2 - 2, '#')
+    c.drawCentredString(cx + NUM_W / 2, gt - COL_HDR_H / 2 - 2.5, '#')
 
     # Separator in header
     c.setStrokeColor(colors.white)
-    c.setStrokeAlpha(0.3)
+    c.setStrokeAlpha(0.25)
     c.setLineWidth(0.4)
     c.line(cx + NUM_W, gt - COL_HDR_H + 1, cx + NUM_W, gt - 1)
     c.setStrokeAlpha(1)
 
-    # Choice labels
-    c.setFont(EN_B, 8)
+    # Choice labels — each in a small circle outline
     for i, lbl in enumerate(labels):
         bx = bubbles_start + i * gap
+        c.setStrokeColor(colors.white)
         c.setFillColor(colors.white)
-        c.drawCentredString(bx, gt - COL_HDR_H / 2 - 2, lbl)
+        c.setStrokeAlpha(0.5)
+        c.circle(bx, gt - COL_HDR_H / 2, 3.5 * mm, stroke=1, fill=0)
+        c.setStrokeAlpha(1)
+        c.setFont(EN_B, 8)
+        c.setFillColor(colors.white)
+        c.drawCentredString(bx, gt - COL_HDR_H / 2 - 2.5, lbl)
 
     # Rows
     drawn = 0
@@ -406,10 +411,13 @@ def _draw_grid(c, cx, gt, cw, rows_in_col, q_start, qcount, labels, ccount, desi
         c.setLineWidth(0.2)
         c.line(cx + NUM_W, ry_bot, cx + NUM_W, ry_top)
 
-        # Question number
-        c.setFillColor(hc(design['header_bg_color']))
-        c.setFont(EN_B, 8)
-        c.drawCentredString(cx + NUM_W / 2, cy - 2.5, str(qn))
+        # Question number — filled circle badge
+        badge_r = 3.0 * mm
+        c.setFillColor(hc(design['accent_color']))
+        c.circle(cx + NUM_W / 2, cy, badge_r, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont(EN_B, 7 if qn < 10 else 6.5)
+        c.drawCentredString(cx + NUM_W / 2, cy - 2.2, str(qn))
 
         chosen = answers[qn - 1] if answers and qn - 1 < len(answers) else None
 
